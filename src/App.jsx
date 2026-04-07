@@ -260,11 +260,19 @@ function MapScreen({ tileUrl, isPaused, setIsPaused, onOpenPicker, username, gro
     socket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        // data matches LocationMessage struct: {userID, groupID, lat, lng, name, timestamp}
-        setPeers(prev => ({
-          ...prev,
-          [data.userID]: { lat: data.lat, lng: data.lng, timestamp: data.timestamp, name: data.name }
-        }));
+        if (data.offline) {
+          setPeers(prev => {
+            const newPeers = { ...prev };
+            delete newPeers[data.userID];
+            return newPeers;
+          });
+        } else {
+          // data matches LocationMessage struct: {userID, groupID, lat, lng, name, timestamp}
+          setPeers(prev => ({
+            ...prev,
+            [data.userID]: { lat: data.lat, lng: data.lng, timestamp: data.timestamp, name: data.name }
+          }));
+        }
       } catch (err) {
         console.error("Failed to parse websocket message", err);
       }

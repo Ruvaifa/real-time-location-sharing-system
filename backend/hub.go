@@ -71,6 +71,26 @@ func (h *Hub) Run() {
 					delete(group, client)
 					close(client.send) // Cleanly closes their output pipeline
 					
+					// Delete from cache so new users don't see them
+					if cacheGroup, cacheOk := h.cache[client.GroupID]; cacheOk {
+						delete(cacheGroup, client.UserID)
+					}
+					
+					// Broadcast disconnect to remaining peers
+					disconnectMsg := LocationMessage{
+						UserID:  client.UserID,
+						GroupID: client.GroupID,
+						Offline: true,
+					}
+					if msgBytes, err := json.Marshal(disconnectMsg); err == nil {
+						for c := range group {
+							select {
+							case c.send <- msgBytes:
+							default:
+							}
+						}
+					}
+
 					// If the room is permanently empty, nuke it entirely to save RAM allocation
 					if len(group) == 0 {
 						delete(h.groups, client.GroupID)

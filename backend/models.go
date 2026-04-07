@@ -8,6 +8,7 @@ type LocationMessage struct {
 	Lng       float64 `json:"lng"`       // longitude (-180 to 180)
 	Name      string  `json:"name"`      // display name shown on map marker
 	Timestamp int64   `json:"timestamp"` // Unix milliseconds (time.Now().UnixMilli())
+	Offline   bool    `json:"offline,omitempty"` // indicates the user has disconnected
 }
 
 // ClientInfo is used by the Hub to track the last known state of a connected user.
