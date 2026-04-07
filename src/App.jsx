@@ -205,114 +205,77 @@ function MapScreen({ tileUrl, isPaused, setIsPaused, onOpenPicker, username, gro
   const [peers, setPeers] = useState({});
   const ws = useRef(null);
 
-  // 1. MOCKED Geolocation Polling (Simulates moving user)
+  // 1. REAL Geolocation Tracking
   useEffect(() => {
-    // Initial mock location (SF)
-    let currentLat = 37.7749;
-    let currentLng = -122.4194;
+    if (!navigator.geolocation) {
+      console.error("Geolocation is not supported by your browser");
+      return;
+    }
 
-    setLocation({ lat: currentLat, lng: currentLng });
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        if (isPaused) return;
+        
+        const newLoc = {
+          lat: parseFloat(pos.coords.latitude.toFixed(5)),
+          lng: parseFloat(pos.coords.longitude.toFixed(5)),
+        };
+        setLocation(newLoc);
 
-    const intervalId = setInterval(() => {
-      if (isPaused) return;
-
-      // Simulate a small random movement (approx few meters)
-      currentLat += (Math.random() - 0.5) * 0.0001;
-      currentLng += (Math.random() - 0.5) * 0.0001;
-      
-      const newLoc = {
-        lat: parseFloat(currentLat.toFixed(5)),
-        lng: parseFloat(currentLng.toFixed(5)),
-      };
-      setLocation(newLoc);
-
-      // Simulate sending broadcast to websocket
-      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-        ws.current.send(JSON.stringify({
-          action: "broadcast",
-          user: username,
-          lat: newLoc.lat,
-          lng: newLoc.lng,
-          timestamp: Date.now()
-        }));
-      }
-    }, 2000); // 2 second mock GPS poll
-
-    return () => clearInterval(intervalId);
-  }, [username, isPaused]);
-
-  // 2. MOCKED WebSocket Connection Configuration
-  useEffect(() => {
-    // We replace the crashing WebSocket with a mocked connection
-    const mockWs = {
-      readyState: WebSocket.OPEN,
-      send: (dataStr) => {
-        const data = JSON.parse(dataStr);
-        console.log("Mock WS sent:", data);
-        // If real, server broadcasts to others
+        // Send broadcast to real websocket
+        if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+          ws.current.send(JSON.stringify({
+            userID: username,
+            groupID: groupId,
+            name: username,
+            lat: newLoc.lat,
+            lng: newLoc.lng,
+            timestamp: Date.now()
+          }));
+        }
       },
-      close: () => console.log("Mock WS closed")
+      (error) => {
+        console.error("Geolocation error: ", error.message);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 2000,
+        timeout: 10000,
+      }
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [username, groupId, isPaused]);
+
+  // 2. REAL WebSocket Connection Configuration
+  useEffect(() => {
+    // Connect mapping to our brand new Go Backend endpoint
+    const socket = new WebSocket(`ws://localhost:8080/ws/${groupId}?userID=${username}&name=${username}`);
+    ws.current = socket;
+
+    socket.onopen = () => {
+      console.log("Connected to Real-time Backend!");
     };
-    ws.current = mockWs;
-    
-    // Simulate Initial "Handshake" / state_sync from backend
-    const mockInitialPeers = {
-      "Alex": { lat: 37.7752, lng: -122.4180, timestamp: Date.now() },
-      "Mila": { lat: 37.7740, lng: -122.4200, timestamp: Date.now() }
-    };
 
-    setTimeout(() => {
-      const stateSyncEvent = { type: "state_sync", peers: mockInitialPeers };
-      handleMockMessage(stateSyncEvent);
-    }, 500); // 0.5s connection delay
-
-    // Simulate other peers moving around periodically
-    const peerMoveInterval = setInterval(() => {
-      const names = ["Alex", "Mila"];
-      names.forEach(name => {
-        // Move them slightly and broadcast
-        setPeers(prev => {
-          const p = prev[name];
-          if (!p) return prev;
-          
-          const newLat = parseFloat((p.lat + (Math.random() - 0.5) * 0.0002).toFixed(5));
-          const newLng = parseFloat((p.lng + (Math.random() - 0.5) * 0.0002).toFixed(5));
-          
-          const positionEvent = { 
-            type: "position", 
-            user: name, 
-            lat: newLat, 
-            lng: newLng, 
-            timestamp: Date.now() 
-          };
-          
-          // Only update if we can process the mocked event
-          setTimeout(() => handleMockMessage(positionEvent), 0);
-          return prev;
-        });
-      });
-    }, 3000);
-
-    const handleMockMessage = (data) => {
-      if (data.type === "state_sync") {
-        setPeers(data.peers);
-      } else if (data.type === "position" && data.user !== username) {
+    socket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        // data matches LocationMessage struct: {userID, groupID, lat, lng, name, timestamp}
         setPeers(prev => ({
           ...prev,
-          [data.user]: { lat: data.lat, lng: data.lng, timestamp: data.timestamp }
+          [data.userID]: { lat: data.lat, lng: data.lng, timestamp: data.timestamp, name: data.name }
         }));
-      } else if (data.type === "disconnect") {
-        setPeers(prev => {
-          const copy = { ...prev };
-          delete copy[data.user];
-          return copy;
-        });
+      } catch (err) {
+        console.error("Failed to parse websocket message", err);
       }
+    };
+
+    socket.onclose = () => {
+      console.log("Disconnected from backend");
     };
 
     return () => {
-      mockWs.close();
-      clearInterval(peerMoveInterval);
+      socket.close();
     };
   }, [groupId, username]);
 

@@ -1,0 +1,239 @@
+PROJECT REQUIREMENTS DOCUMENT
+Real-Time Location-Sharing System
+Backend (Go) — Intern Task: Part 1
+Document Version
+1.0
+Date
+April 2026
+Scope
+Go backend only (main.go, hub.go, client.go, models.go)
+Frontend Repo
+https://github.com/Ruvaifa/real-time-location-sharing-system
+Target AI
+Gemini 2.5 Pro (or equivalent code-generation LLM)
+Status
+Ready for implementation
+1. Purpose & Scope
+This document gives a code-generation AI everything it needs to implement the Golang WebSocket backend for a real-time group location-sharing system. The React/Leaflet frontend already exists and is mocked — your job is to build the real backend it will connect to. When this backend is running, the frontend team simply uncomments the production WebSocket lines in src/App.jsx and deletes the mock block.
+The backend is a single stateless binary that acts as a switchboard: it accepts WebSocket connections, groups users by a shared group ID, and broadcasts GPS coordinate packets between peers in the same group. It also caches the last known position of every user so that late-joiners immediately see everyone on the map.
+2. Required File Structure
+You must write exactly four Go source files inside a backend/ directory. Do not restructure or add extra files unless asked.
+backend/
+  ├── main.go      // HTTP server, route wiring, CORS, Hub startup
+  ├── hub.go       // Central Hub: goroutine, register/unregister/broadcast channels
+  ├── client.go    // Per-connection Client: goroutines for read/write pumps
+  └── models.go    // Shared structs: LocationMessage, ClientInfo, etc.
+Use Go modules. The module name should be location-sharing-backend. The only external dependency allowed is the Gorilla WebSocket library (github.com/gorilla/websocket).
+3. Dependencies
+go mod init location-sharing-backend
+go get github.com/gorilla/websocket
+No other external packages. Use only the Go standard library for everything else (net/http, sync, log, encoding/json, math, time, fmt).
+4. Data Models (models.go)
+Define the following structs. All JSON field names must match exactly — the frontend parses these.
+4.1  LocationMessage
+This is the primary message type sent over the wire in both directions (client → server → broadcast to peers).
+type LocationMessage struct {
+    UserID    string  `json:"userID"`    // unique user identifier (UUID or name)
+    GroupID   string  `json:"groupID"`   // shared group session ID
+    Lat       float64 `json:"lat"`       // latitude (-90 to 90)
+    Lng       float64 `json:"lng"`       // longitude (-180 to 180)
+    Name      string  `json:"name"`      // display name shown on map marker
+    Timestamp int64   `json:"timestamp"` // Unix milliseconds (time.Now().UnixMilli())
+}
+4.2  ClientInfo
+Used by the Hub to track the last known state of a connected user.
+type ClientInfo struct {
+    Client   *Client
+    LastSeen LocationMessage
+}
+4.3  HubMessage (internal)
+Wraps an outgoing message with its sender so the Hub can skip echoing back to the sender.
+type HubMessage struct {
+    Sender  *Client
+    Payload []byte
+}
+5. The Hub (hub.go)
+The Hub is a singleton goroutine that serialises all state mutations. Nothing outside the hub's Run() goroutine reads or writes the groups map — this is the key to concurrency safety.
+5.1  Hub Struct
+type Hub struct {
+    // Outer key = groupID, inner key = *Client
+    groups     map[string]map[*Client]bool
+    // Last known location per (groupID, userID)
+    cache      map[string]map[string]LocationMessage
+    register   chan *Client
+    unregister chan *Client
+    broadcast  chan HubMessage
+}
+func NewHub() *Hub {
+    return &Hub{
+        groups:     make(map[string]map[*Client]bool),
+        cache:      make(map[string]map[string]LocationMessage),
+        register:   make(chan *Client),
+        unregister: make(chan *Client),
+        broadcast:  make(chan HubMessage, 256),
+    }
+}
+5.2  Hub.Run() — the goroutine
+Implement a select loop with three cases:
+register: When a new client connects, add it to groups[client.GroupID]. Then iterate cache[client.GroupID] and send each cached LocationMessage as JSON to the new client's send channel. This is the state-cache repopulation that satisfies the Definition of Done requirement: refreshing the page does not lose peers.
+unregister: Remove the client from groups[client.GroupID]. Close the client's send channel. If the group becomes empty, delete it from groups and cache.
+broadcast: Deserialize the payload into a LocationMessage to extract userID. Update cache[groupID][userID]. Then forward the payload to every other client in the group (skip the sender). Use a non-blocking send; if a client's send buffer is full, close and remove it.
+Critical: do NOT use mutexes in hub.go. Channel serialisation is the Go idiomatic approach here.
+6. The Client (client.go)
+6.1  Client Struct
+const (
+    writeWait  = 10 * time.Second
+    pongWait   = 60 * time.Second
+    pingPeriod = (pongWait * 9) / 10
+    maxMsgSize = 1024
+)
+type Client struct {
+    hub     *Hub
+    conn    *websocket.Conn
+    send    chan []byte
+    GroupID string
+    UserID  string
+}
+6.2  ReadPump
+Runs in its own goroutine. Sets read deadline to pongWait, registers a pong handler that resets the deadline, sets MaxMessageSize. Reads JSON messages in a loop, parses them to extract UserID/GroupID for the Client struct fields (needed for hub routing), then sends a HubMessage{Sender: c, Payload: raw} to hub.broadcast. On any read error, send the client to hub.unregister and return.
+6.3  WritePump
+Runs in its own goroutine. Uses a ticker at pingPeriod. Select between:
+Message on send channel → write to WebSocket with writeWait deadline.
+Ticker fires → send a WebSocket Ping frame. If write fails, return (ReadPump will handle cleanup).
+Channel close → send a Close frame and return.
+7. The Entry Point (main.go)
+7.1  WebSocket Upgrader
+var upgrader = websocket.Upgrader{
+    ReadBufferSize:  1024,
+    WriteBufferSize: 1024,
+    CheckOrigin: func(r *http.Request) bool {
+        return true // Allow all origins (development)
+    },
+}
+7.2  Route: /ws/{groupID}
+Extract groupID from the URL path. Also read a name query parameter (the user's display name). Upgrade the HTTP connection. Create a new Client. Immediately send it to hub.register. Start client.WritePump and client.ReadPump as goroutines. The handler function itself returns after starting the goroutines.
+func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
+    // Parse groupID from path: /ws/{groupID}
+    // Parse "name" and "userID" from query string
+    conn, err := upgrader.Upgrade(w, r, nil)
+    // ... create client, register, start goroutines
+}
+7.3  CORS Middleware
+Wrap all handlers with a middleware that sets the following response headers so the React dev server (usually on port 5173) can connect:
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: GET, POST, OPTIONS
+Access-Control-Allow-Headers: Content-Type
+Return 200 immediately for OPTIONS pre-flight requests.
+7.4  Server Bootstrap
+func main() {
+    hub := NewHub()
+    go hub.Run()
+    http.HandleFunc("/ws/", corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
+        serveWs(hub, w, r)
+    }))
+    log.Println("Backend listening on :8080")
+    log.Fatal(http.ListenAndServe(":8080", nil))
+}
+8. WebSocket Message Protocol
+All messages are JSON text frames. The backend must never send binary frames. The frontend sends and expects the LocationMessage struct defined in Section 4.1.
+8.1  Connection URL
+ws://localhost:8080/ws/{groupID}?userID={uuid}&name={displayName}
+8.2  Client → Server (location update)
+{
+  "userID":    "user-abc-123",
+  "groupID":   "group-xyz",
+  "lat":       37.77493,
+  "lng":       -122.41942,
+  "name":      "Alice",
+  "timestamp": 1712345678901
+}
+8.3  Server → Client (broadcast / cache replay)
+Identical structure to the inbound message. The server broadcasts every received message to all other clients in the group verbatim (after updating its cache). On join, the server replays all cached messages for the group to the new client, one message per peer.
+8.4  What the server must NOT do
+Do not echo the message back to the sender.
+Do not modify or re-encode the payload — forward raw bytes for efficiency.
+Do not require authentication; groupID is the only session mechanism.
+9. Concurrency Model
+The design follows the standard Go WebSocket hub pattern:
+  HTTP goroutine (serveWs)
+       |
+       +--> hub.register <- *Client
+       |
+  [ReadPump goroutine per client]
+       |
+       +--> hub.broadcast <- HubMessage
+       |
+  [Hub.Run() goroutine] -- single owner of all maps
+       |
+       +--> client.send <- []byte  (for each peer)
+       |
+  [WritePump goroutine per client]
+       |
+       +--> websocket.Conn.WriteMessage
+The Hub.Run() goroutine is the ONLY place that reads or writes groups and cache. Never touch these maps from ReadPump or WritePump.
+10. Definition of Done (Acceptance Criteria)
+The implementation is complete when all four criteria pass:
+#
+Criterion
+Observable Behaviour
+1
+Handshake
+User A opens the frontend in browser 1, User B opens in browser 2, same groupID. Within 1 second, User A's marker appears on User B's map, and vice versa.
+2
+Movement
+User A moves (or mock-moves) >= 5 metres. User B's map slides User A's marker to the new position without a page reload.
+3
+Data Persistence
+User B refreshes the page. Within 1 second of reconnecting, User A's marker reappears at the last known position (served from the backend cache).
+4
+Information
+User B clicks User A's marker. The popup shows: latitude and longitude to 5 decimal places, distance from User B calculated using the Haversine formula, and a Last Active timestamp.
+11. Constraints & Non-Goals
+Port: Must run on :8080. The frontend is hard-coded to connect to ws://localhost:8080.
+No database: State is in-memory only. Restarting the server clears all cached positions. This is acceptable for the POC.
+No auth: Any client that knows the groupID can join. Do not add API keys or tokens.
+No TLS: Plain ws:// is fine for local development.
+No frontend changes: You must not modify any file outside the backend/ directory.
+Single binary: go build ./... must produce a single runnable binary with no external runtime dependencies.
+Go version: Use Go 1.21 or later (generics are available but not required).
+12. Frontend Integration Note
+The frontend (src/App.jsx) currently uses a mock WebSocket. The production connection is already written but commented out. Once your backend is running on :8080, the frontend team will:
+Uncomment the production WebSocket block in App.jsx.
+Delete the mock simulation block.
+Run npm run dev and point two browser tabs at the same group URL.
+The URL format the frontend will use is:
+ws://localhost:8080/ws/{groupID}?userID={uuid}&name={displayName}
+Make sure your URL parsing in serveWs() handles both the path segment and the query parameters correctly. The groupID is the last path segment after /ws/. The userID and name come from r.URL.Query().
+13. Example End-to-End Message Flow
+1. Alice opens browser → GET /ws/group42?userID=alice&name=Alice
+   Server: upgrades to WS, creates Client{GroupID:'group42', UserID:'alice'}
+   Server: hub.register <- Alice
+   Hub: groups['group42'] = {Alice: true}, cache['group42'] = {} (empty, no peers yet)
+   Hub: sends Alice all cached peers (none yet)
+2. Bob opens browser  → GET /ws/group42?userID=bob&name=Bob
+   Server: hub.register <- Bob
+   Hub: groups['group42'] = {Alice: true, Bob: true}
+   Hub: sends Bob Alice's last cached position (if Alice already sent one)
+3. Alice's GPS fires → Alice sends LocationMessage JSON to server
+   Alice's ReadPump → hub.broadcast <- HubMessage{Sender:Alice, Payload:json}
+   Hub: cache['group42']['alice'] = Alice's position
+   Hub: forwards payload to Bob (skips Alice)
+   Bob's WritePump: sends payload to Bob's browser
+   Bob's map: Alice's marker slides to new position
+4. Bob refreshes browser
+   New Bob WS connects, hub.register <- NewBob
+   Hub: immediately sends cached Alice position to NewBob
+   NewBob's map: Alice's marker appears instantly
+14. Output Instructions for the AI
+When you generate code based on this PRD, follow these rules precisely:
+Output all four files in full: models.go, hub.go, client.go, main.go.
+Include package main in all files (this is a single-package binary).
+Add a go.mod file with module name location-sharing-backend and require github.com/gorilla/websocket v1.5.1 (or latest stable).
+Do not split into sub-packages — all four files share package main.
+Add a brief comment above every exported type and function explaining what it does in one sentence.
+Do not add HTTP endpoints other than /ws/{groupID} and an optional /health GET that returns 200 OK.
+Do not add a Dockerfile, CI config, or test files unless explicitly asked in a follow-up prompt.
+After generating the code, provide a single bash block showing how to run it:
+cd backend
+go mod tidy
+go run .
