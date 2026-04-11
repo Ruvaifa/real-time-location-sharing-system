@@ -10,6 +10,11 @@ import { BottomNavBar, NavItem } from "./components/ui/bottom-nav-bar";
 import { GlobeAnalytics } from "./components/ui/cobe-globe-analytics";
 import { LocationData, useAppStore } from "./store/useAppStore";
 
+
+function buildWsUrl(groupId: string, username: string): string {
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${window.location.host}/ws/${groupId}?userID=${encodeURIComponent(username)}&name=${encodeURIComponent(username)}`;
+}
 // Fix Leaflet's default icon rendering issues
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -34,9 +39,9 @@ function calculateDistance(
   const a =
     Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
     Math.cos(phi1) *
-      Math.cos(phi2) *
-      Math.sin(deltaLambda / 2) *
-      Math.sin(deltaLambda / 2);
+    Math.cos(phi2) *
+    Math.sin(deltaLambda / 2) *
+    Math.sin(deltaLambda / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
   return R * c;
@@ -67,7 +72,7 @@ function getInitials(name: string): string {
 function createCustomIcon(name: string, isYou: boolean, isActive: boolean) {
   const color = isYou ? "#42A5F5" : isActive ? getHashColor(name) : "#888888";
   const initials = getInitials(name);
-  
+
   const html = `
     <div class="custom-marker" style="border-color: ${color}">
       <div class="custom-marker-inner" style="background-color: ${color}">
@@ -120,17 +125,17 @@ function LoginScreen({ onContinue }: { onContinue: () => void }) {
       <div className="login-container">
         <div className="login-logo">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM18.9 16.4L15.3 12H18C18 8.68 15.32 6 12 6C8.68 6 6 8.68 6 12C6 15.32 8.68 18 12 18V20C7.58 20 4 16.42 4 12C4 7.58 7.58 4 12 4C16.42 4 20 7.58 20 12H21.5L18.9 16.4Z" fill="black"/>
-            <path fillRule="evenodd" clipRule="evenodd" d="M14.6152 7.02558C17.4764 8.24357 18.9248 11.9686 17.29 14.8698C15.6552 17.7711 12.3902 18.0698 10.3709 15.5392L8.25752 12.8711C6.73145 10.9419 7.42063 8.01633 9.71261 7.21447L12.3683 6.27964C13.1256 6.01258 13.9168 6.27964 14.6152 7.02558Z" fill="black"/>
+            <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM18.9 16.4L15.3 12H18C18 8.68 15.32 6 12 6C8.68 6 6 8.68 6 12C6 15.32 8.68 18 12 18V20C7.58 20 4 16.42 4 12C4 7.58 7.58 4 12 4C16.42 4 20 7.58 20 12H21.5L18.9 16.4Z" fill="black" />
+            <path fillRule="evenodd" clipRule="evenodd" d="M14.6152 7.02558C17.4764 8.24357 18.9248 11.9686 17.29 14.8698C15.6552 17.7711 12.3902 18.0698 10.3709 15.5392L8.25752 12.8711C6.73145 10.9419 7.42063 8.01633 9.71261 7.21447L12.3683 6.27964C13.1256 6.01258 13.9168 6.27964 14.6152 7.02558Z" fill="black" />
           </svg>
         </div>
-        
+
         <h1 className="login-title">ParkQ Live</h1>
         <p className="login-subtitle">Move together, track together.</p>
-        
+
         <div className="input-wrapper">
-          <input 
-            type="email" 
+          <input
+            type="email"
             placeholder="Email address"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -148,22 +153,22 @@ function LoginScreen({ onContinue }: { onContinue: () => void }) {
         </button>
 
         <div className="divider">
-           <span>or</span>
+          <span>or</span>
         </div>
 
         <button className="btn-secondary" onClick={onContinue}>
           <svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
+            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
           </svg>
           Continue with Google
         </button>
-        
+
         <button className="btn-secondary" onClick={onContinue}>
           <svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path d="M16.365 14.502c-0.015-3.66 2.971-5.412 3.109-5.495-1.698-2.483-4.321-2.819-5.249-2.863-2.236-0.225-4.364 1.317-5.513 1.317-1.135 0-2.88-1.282-4.707-1.246-2.404 0.035-4.636 1.398-5.875 3.551-2.527 4.372-0.645 10.846 1.815 14.398 1.192 1.733 2.628 3.668 4.492 3.593 1.782-0.078 2.457-1.155 4.606-1.155 2.133 0 2.76 1.155 4.638 1.121 1.93-0.04 3.167-1.745 4.343-3.469 1.36-1.996 1.921-3.927 1.95-4.027-0.04-0.018-3.593-1.378-3.609-5.725zM15.422 4.298c0.973-1.177 1.624-2.803 1.446-4.432-1.392 0.057-3.136 0.927-4.148 2.102-0.898 1.05-1.677 2.716-1.463 4.305 1.554 0.12 3.149-0.781 4.165-1.975z" fill="black"/>
+            <path d="M16.365 14.502c-0.015-3.66 2.971-5.412 3.109-5.495-1.698-2.483-4.321-2.819-5.249-2.863-2.236-0.225-4.364 1.317-5.513 1.317-1.135 0-2.88-1.282-4.707-1.246-2.404 0.035-4.636 1.398-5.875 3.551-2.527 4.372-0.645 10.846 1.815 14.398 1.192 1.733 2.628 3.668 4.492 3.593 1.782-0.078 2.457-1.155 4.606-1.155 2.133 0 2.76 1.155 4.638 1.121 1.93-0.04 3.167-1.745 4.343-3.469 1.36-1.996 1.921-3.927 1.95-4.027-0.04-0.018-3.593-1.378-3.609-5.725zM15.422 4.298c0.973-1.177 1.624-2.803 1.446-4.432-1.392 0.057-3.136 0.927-4.148 2.102-0.898 1.05-1.677 2.716-1.463 4.305 1.554 0.12 3.149-0.781 4.165-1.975z" fill="black" />
           </svg>
           Continue with Apple
         </button>
@@ -267,6 +272,7 @@ function MapScreen() {
   const peers = useAppStore((state) => state.peers);
   const setLocation = useAppStore((state) => state.setLocation);
   const upsertPeer = useAppStore((state) => state.upsertPeer);
+  const removePeer = useAppStore((state) => state.removePeer);
   const clearLiveData = useAppStore((state) => state.clearLiveData);
   const setScreen = useAppStore((state) => state.setScreen);
 
@@ -323,29 +329,82 @@ function MapScreen() {
     return () => navigator.geolocation.clearWatch(watchId);
   }, [username, groupId]);
 
+  // useEffect(() => {
+  //   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  //   const socket = new WebSocket(
+  //     `${protocol}//${window.location.host}/ws/${groupId}?userID=${username}&name=${username}`
+  //   );
+  //   ws.current = socket;
+
+  //   socket.onmessage = (event) => {
+  //     try {
+  //       const data: LocationData = JSON.parse(event.data);
+
+  //       if (data.userID !== username) {
+  //         upsertPeer(data);
+  //       }
+  //     } catch (err) {
+  //       console.error("Failed to parse websocket message", err);
+  //     }
+  //   };
+
+  //   return () => {
+  //     socket.close();
+  //   };
+  // }, [groupId, username, upsertPeer]);
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttempt = useRef(0);
+  const [wsStatus, setWsStatus] = useState<"connecting" | "connected" | "disconnected">("connecting");
+
   useEffect(() => {
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const socket = new WebSocket(
-      `${protocol}//${window.location.host}/ws/${groupId}?userID=${username}&name=${username}`
-    );
-    ws.current = socket;
+    let isMounted = true;
 
-    socket.onmessage = (event) => {
-      try {
-        const data: LocationData = JSON.parse(event.data);
+    function connect() {
+      if (!isMounted) return;
+      setWsStatus("connecting");
+      const socket = new WebSocket(buildWsUrl(groupId, username));
+      ws.current = socket;
 
-        if (data.userID !== username) {
-          upsertPeer(data);
+      socket.onopen = () => {
+        if (!isMounted) return;
+        setWsStatus("connected");
+        reconnectAttempt.current = 0;
+      };
+
+      socket.onmessage = (event) => {
+        if (!isMounted) return;
+        try {
+          const data: LocationData = JSON.parse(event.data);
+          if ((data as any).offline) {
+            removePeer(data.userID);
+            return;
+          }
+          if (data.userID !== username) {
+            upsertPeer(data);
+          }
+        } catch (err) {
+          console.error("Failed to parse websocket message", err);
         }
-      } catch (err) {
-        console.error("Failed to parse websocket message", err);
-      }
-    };
+      };
+
+      socket.onclose = () => {
+        if (!isMounted) return;
+        setWsStatus("disconnected");
+        const delay = Math.min(1000 * 2 ** reconnectAttempt.current, 16000);
+        reconnectAttempt.current += 1;
+        reconnectTimer.current = setTimeout(connect, delay);
+      };
+    }
+
+    connect();
 
     return () => {
-      socket.close();
+      isMounted = false;
+      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+      ws.current?.close();
     };
-  }, [groupId, username, upsertPeer]);
+  }, [groupId, username, upsertPeer, removePeer]);
+  //-----------------------
 
   useEffect(() => {
     const interval = setInterval(() => setTick((t) => t + 1), 5000);
@@ -369,7 +428,15 @@ function MapScreen() {
         <>
           <div className="map-top-bar">
             <div className="trip-chip">
-              <span className="live-dot" />
+              {/* <span className="live-dot" />  */}
+              <span
+                className="live-dot"
+                style={{
+                  backgroundColor:
+                    wsStatus === "connected" ? "#4CAF50" :
+                      wsStatus === "connecting" ? "#FFCA28" : "#EF5350"
+                }}
+              />
               <span>Room {groupId}</span>
               <span className="chip-separator">|</span>
               <span>{activePeers + 1} live</span>
@@ -428,9 +495,9 @@ function MapScreen() {
               style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#0a0a0a" }}
             >
               <div style={{ width: "100%", maxWidth: "600px", padding: "20px" }}>
-                <GlobeAnalytics 
-                  onZoomIn={() => setView("map")} 
-                  speed={0.005} 
+                <GlobeAnalytics
+                  onZoomIn={() => setView("map")}
+                  speed={0.005}
                 />
               </div>
             </motion.div>
@@ -460,11 +527,11 @@ function MapScreen() {
                     <Popup className="dark-popup">
                       <div className="popup-content">
                         <div className="popup-header">
-                           <div className="avatar" style={{backgroundColor: "#42A5F5"}}>{getInitials(username)}</div>
-                           <div className="popup-title">
-                             <h4>{username} (You)</h4>
-                             <p><span className="live-dot" /> Live &middot; just now</p>
-                           </div>
+                          <div className="avatar" style={{ backgroundColor: "#42A5F5" }}>{getInitials(username)}</div>
+                          <div className="popup-title">
+                            <h4>{username} (You)</h4>
+                            <p><span className="live-dot" /> Live &middot; just now</p>
+                          </div>
                         </div>
                         <div className="popup-row">
                           <span>Coordinates</span>
@@ -489,7 +556,7 @@ function MapScreen() {
                     dist > 1000
                       ? (dist / 1000).toFixed(2) + " km"
                       : Math.round(dist) + " m";
-                  
+
                   const timeSince = Date.now() - peerData.timestamp;
                   const isActive = timeSince < 60000;
 
@@ -502,12 +569,12 @@ function MapScreen() {
                       <Popup className="dark-popup">
                         <div className="popup-content">
                           <div className="popup-header">
-                            <div className="avatar" style={{backgroundColor: getHashColor(peerData.name)}}>
+                            <div className="avatar" style={{ backgroundColor: getHashColor(peerData.name) }}>
                               {getInitials(peerData.name)}
                             </div>
                             <div className="popup-title">
                               <h4>{peerData.name}</h4>
-                              <p><span className="live-dot" style={{backgroundColor: isActive ? '#4CAF50' : '#888'}} /> {isActive ? 'Live' : 'Offline'} &middot; {formatTimeAgo(peerData.timestamp)}</p>
+                              <p><span className="live-dot" style={{ backgroundColor: isActive ? '#4CAF50' : '#888' }} /> {isActive ? 'Live' : 'Offline'} &middot; {formatTimeAgo(peerData.timestamp)}</p>
                             </div>
                           </div>
                           <div className="popup-row">
@@ -547,46 +614,46 @@ function MapScreen() {
             <span>Last update: {lastPulse}</span>
             <span>Tick {tick}</span>
           </div>
-          
+
           <div className="user-item">
-          <div className="avatar" style={{backgroundColor: "#42A5F5"}}>{getInitials(username)}</div>
-          <div className="user-info">
-            <div className="user-name">{username} (You)</div>
-            <div className="user-status">0m away &middot; just now</div>
-          </div>
-          <div className="live-dot" />
-        </div>
-
-        {peerEntries.map(([peerId, peerData]) => {
-           let dist = 0;
-           if (location) {
-             dist = calculateDistance(
-               location.lat,
-               location.lng,
-               peerData.lat,
-               peerData.lng
-             );
-           }
-           const distText =
-             dist > 1000
-               ? (dist / 1000).toFixed(2) + " km"
-               : Math.round(dist) + " m";
-           const timeSince = Date.now() - peerData.timestamp;
-           const isActive = timeSince < 60000;
-
-           return (
-            <div className="user-item" key={peerId}>
-              <div className="avatar" style={{backgroundColor: isActive ? getHashColor(peerData.name) : "#888"}}>
-                {getInitials(peerData.name)}
-              </div>
-              <div className="user-info">
-                <div className="user-name">{peerData.name}</div>
-                <div className="user-status">{distText} away &middot; {formatTimeAgo(peerData.timestamp)}</div>
-              </div>
-              <div className="live-dot" style={{backgroundColor: isActive ? '#4CAF50' : '#FFC107'}} />
+            <div className="avatar" style={{ backgroundColor: "#42A5F5" }}>{getInitials(username)}</div>
+            <div className="user-info">
+              <div className="user-name">{username} (You)</div>
+              <div className="user-status">0m away &middot; just now</div>
             </div>
-           );
-        })}
+            <div className="live-dot" />
+          </div>
+
+          {peerEntries.map(([peerId, peerData]) => {
+            let dist = 0;
+            if (location) {
+              dist = calculateDistance(
+                location.lat,
+                location.lng,
+                peerData.lat,
+                peerData.lng
+              );
+            }
+            const distText =
+              dist > 1000
+                ? (dist / 1000).toFixed(2) + " km"
+                : Math.round(dist) + " m";
+            const timeSince = Date.now() - peerData.timestamp;
+            const isActive = timeSince < 60000;
+
+            return (
+              <div className="user-item" key={peerId}>
+                <div className="avatar" style={{ backgroundColor: isActive ? getHashColor(peerData.name) : "#888" }}>
+                  {getInitials(peerData.name)}
+                </div>
+                <div className="user-info">
+                  <div className="user-name">{peerData.name}</div>
+                  <div className="user-status">{distText} away &middot; {formatTimeAgo(peerData.timestamp)}</div>
+                </div>
+                <div className="live-dot" style={{ backgroundColor: isActive ? '#4CAF50' : '#FFC107' }} />
+              </div>
+            );
+          })}
         </div>
       )}
     </motion.div>

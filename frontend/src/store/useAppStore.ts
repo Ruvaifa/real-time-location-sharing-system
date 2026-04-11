@@ -27,6 +27,7 @@ interface AppStore {
   upsertPeer: (peer: LocationData) => void;
   clearLiveData: () => void;
   resetSession: () => void;
+  removePeer: (userID: string) => void
 }
 
 export const useAppStore = create<AppStore>((set) => ({
@@ -48,6 +49,12 @@ export const useAppStore = create<AppStore>((set) => ({
         [peer.userID]: peer,
       },
     })),
+  removePeer: (userID) =>
+    set((state) => {
+      const next = { ...state.peers };
+      delete next[userID];
+      return { peers: next };
+    }),
   clearLiveData: () => set({ location: null, peers: {} }),
   resetSession: () =>
     set({
