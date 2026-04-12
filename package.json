@@ -1,15 +1,20 @@
 {
-  "name": "parkq-dev-project",
+  "name": "real-time-location-sharing",
   "version": "1.0.0",
-  "description": "",
+  "description": "Real-time location sharing system with WebSocket backend",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "location",
+    "websocket",
+    "leaflet",
+    "realtime"
+  ],
+  "author": "Ruvaifa",
+  "license": "MIT",
   "type": "module",
   "dependencies": {
     "framer-motion": "^12.38.0",
@@ -17,7 +22,8 @@
     "lucide-react": "^1.7.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react-leaflet": "^5.0.0"
+    "react-leaflet": "^5.0.0",
+    "zustand": "^5.0.12"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.0.1",

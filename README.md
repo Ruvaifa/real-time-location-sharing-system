@@ -1,63 +1,97 @@
-# 🅿️ ParkQ: Real-Time Location-Sharing System
+# Real-Time Location-Sharing System
 
-Welcome to the **ParkQ Location-Sharing System**! This repository includes an interactive frontend built with React, Vite, and Leaflet, and a robust real-time backend powered by Golang WebSockets. Together, they visualize live physical movement across groups using real-time Geolocation tracking and concurrent server synchronization.
+An interactive real-time location sharing platform with a React/Leaflet frontend and a Go WebSocket backend. Visualize live physical movement across groups using device GPS and concurrent server synchronization.
 
-## ✨ Features
+## Features
 
-- **🗺️ Interactive Maps**: Choose between multiple map styles (Monochrome, Terra, Standard, Satellite) powered by React-Leaflet.
-- **📍 Real-Time Tracking**: Polling real device GPS via the HTML5 `navigator.geolocation.watchPosition` API to ensure live geographical updates accurately.
-- **👥 Group Synchronization**: Uses a Go-based WebSocket Hub to manage concurrent connections cleanly via channels, allowing peers to share and broadcast their coordinates instantly in individual groups.
-- **🧮 Haversine Proximity**: Accurately calculates the real-world distance between users mathematically using the Haversine formula.
-- **📱 Mobile Optimized**: Clean, native-app-like UI built with Framer Motion, fully optimized for mobile viewports (`100dvh`).
+- **Interactive Maps**: Choose between multiple map styles (Monochrome, Terra, Standard, Satellite) powered by React-Leaflet.
+- **Real-Time Tracking**: Uses the HTML5 `navigator.geolocation.watchPosition` API for live geographical updates.
+- **Group Synchronization**: Go-based WebSocket Hub manages concurrent connections via channels, allowing peers to broadcast coordinates in isolated groups.
+- **Haversine Distance**: Calculates real-world distance between users using the Haversine formula.
+- **Mobile Optimized**: Native-app-like UI built with Framer Motion, optimized for mobile viewports.
 
-## 🚀 Getting Started
-
-To run the application locally, you will need to run both the React Frontend and the Go Backend simultaneously.
+## Getting Started
 
 ### Prerequisites
 
 - [Node.js](https://nodejs.org/) (for the frontend)
-- [Go](https://go.dev/) 1.21+ (for the backend)
+- [Go](https://go.dev/) 1.23+ (for the backend)
 
-### 1. Start the Go Backend
+### 1. Configure Environment
 
-The backend is a lightweight in-memory switchboard running on port `:8080`.
+```bash
+cp .env.example .env
+# Edit .env and set ALLOWED_ORIGINS, VITE_WS_HOST, etc.
+```
 
-1. Navigate to the `backend/` directory:
-   ```bash
-   cd backend
-   ```
-2. Run the server:
-   ```bash
-   go run .
-   ```
+### 2. Start the Go Backend
 
-### 2. Start the React Frontend
+```bash
+cd backend
+make dev
+# or: go run ./cmd/server
+```
 
-The frontend runs using Vite, typically on port `:5173`. 
+The backend listens on `:8080` by default (configurable via `PORT` env var).
 
-1. Open a **new terminal window** and navigate to the project root directory.
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-3. Start the development server:
-   ```bash
-   npm run dev
-   ```
+### 3. Start the React Frontend
 
-## 🛠️ Tech Stack
+```bash
+npm install
+npm run dev
+```
+
+The frontend runs on `:5173` and connects to the backend via the `VITE_WS_HOST` env var.
+
+## Project Structure
+
+```
+├── backend/
+│   ├── cmd/server/          # Entrypoint with graceful shutdown
+│   ├── internal/
+│   │   ├── config/          # Environment-based configuration
+│   │   ├── handler/         # HTTP/WebSocket handlers (chi router)
+│   │   ├── middleware/      # CORS middleware with configurable origins
+│   │   ├── model/           # Data types (LocationMessage, HubMessage)
+│   │   ├── validate/        # Coordinate and input validation
+│   │   └── websocket/       # Hub + Client with rate limiting
+│   ├── pkg/apierr/          # JSON error response helper
+│   ├── Dockerfile           # Multi-stage Alpine build
+│   └── Makefile             # build, dev, test, lint
+├── src/
+│   ├── App.jsx              # React app with map + picker screens
+│   ├── main.jsx             # Entry point
+│   └── styles.css           # UI styling
+├── .env.example             # Environment variable template
+└── package.json
+```
+
+## Tech Stack
 
 - **Frontend**: [React](https://reactjs.org/) + [Vite](https://vitejs.dev/)
 - **Map Rendering**: [Leaflet](https://leafletjs.com/) & [React-Leaflet](https://react-leaflet.js.org/)
 - **Animations**: [Framer Motion](https://www.framer.com/motion/)
-- **Backend Hub**: [Go](https://go.dev/) (pure channels, no mutexes) + [Gorilla WebSockets](https://github.com/gorilla/websocket)
+- **Backend**: [Go](https://go.dev/) + [Chi Router](https://github.com/go-chi/chi) + [Gorilla WebSockets](https://github.com/gorilla/websocket)
 
-## 📝 Architecture Notes
+## Architecture
 
-- **Go Channel Concurrency**: The backend entirely avoids traditional memory `mutexes`. Instead, it uses idiomatic Go channels and a centralized select loop within `hub.go` to safely register users, delete empty groups, and broadcast coordinates across peers.
-- **In-Memory Caching**: The server inherently caches the *last known* position of every user. If someone joins a group late or refreshes their page, the Go server automatically replays all active cached markers so they aren't looking at an empty map.
-- **Production Integration**: The client is fully hardwired into the production backend endpoint (`ws://localhost:8080/ws/{groupID}`) eliminating all mock simulated environments.
+- **Go Channel Concurrency**: The backend uses idiomatic Go channels and a centralized select loop in the Hub to safely register users, manage groups, and broadcast coordinates — no mutexes needed.
+- **In-Memory Caching**: The server caches the last known position of every user. Late joiners get all active markers replayed automatically.
+- **Server-Trusted Identity**: The backend overwrites `userID`, `groupID`, and `timestamp` from the authenticated socket, never from the raw payload — preventing spoofing.
+- **Rate Limiting**: Each client is rate-limited to prevent abuse (configurable via `MAX_MSG_RATE`).
+- **Input Validation**: Coordinates are bounds-checked, names are length-capped, and NaN/Inf values are rejected before broadcast.
 
----
-*Built for the ParkQ Smart Parking Initiative.*
+## Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `8080` | Backend listen port |
+| `ALLOWED_ORIGINS` | `http://localhost:5173` | Comma-separated CORS/WebSocket origin whitelist |
+| `APP_ENV` | `development` | Runtime environment |
+| `MAX_GROUP_SIZE` | `64` | Max clients per group |
+| `MAX_MSG_RATE` | `10` | Max messages per second per client |
+| `VITE_WS_HOST` | `localhost:8080` | WebSocket host for the frontend |
+
+## License
+
+MIT
