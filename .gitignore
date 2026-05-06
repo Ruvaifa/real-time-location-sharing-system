@@ -13,6 +13,19 @@ dist
 dist-ssr
 *.local
 
+# Compiled binaries
+*.exe
+*.dll
+*.so
+*.dylib
+backend/server
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -23,3 +36,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Vite cache
+.vite/
