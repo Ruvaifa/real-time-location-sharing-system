@@ -1,41 +1,41 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-# Dependencies
-node_modules
-dist
-dist-ssr
-*.local
-
-# Compiled binaries
-*.exe
-*.dll
-*.so
-*.dylib
-backend/server
-
-# Environment
+# --- Environment and Secrets ---
 .env
 .env.local
 .env.*.local
-!.env.example
+*.pem
+*.key
 
-# Editor directories and files
-.vscode/*
+# --- Dependencies ---
+node_modules/
+/frontend/node_modules/
+/dist/
+/frontend/dist/
+/.next/
+/.vite/
+
+# --- Go Specific ---
+# Binaries and overloads
+/backend/server
+/backend/server.exe
+/backend/location-sharing-backend
+/backend/location-sharing-backend.exe
+*.test
+*.out
+/backend/vendor/
+
+# --- IDE and OS ---
+.vscode/
 !.vscode/extensions.json
-.idea
+.idea/
+*.swp
+*.swo
+*~
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+Thumbs.db
 
-# Vite cache
-.vite/
+# --- Logs ---
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
