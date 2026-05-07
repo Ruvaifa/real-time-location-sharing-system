@@ -27,10 +27,11 @@ type Hub struct {
 	Unregister chan *Client
 	Broadcast  chan HubMessage
 
+	// Quit channel to stop the hub.
+	Quit chan struct{}
+
 	MaxGroupSize int
 	MaxMsgRate   int
-
-	done chan struct{}
 }
 
 // NewHub allocates a Hub ready to Run().
@@ -41,30 +42,21 @@ func NewHub(maxGroupSize, maxMsgRate int) *Hub {
 		Register:     make(chan *Client),
 		Unregister:   make(chan *Client),
 		Broadcast:    make(chan HubMessage, 256),
+		Quit:         make(chan struct{}),
 		MaxGroupSize: maxGroupSize,
 		MaxMsgRate:   maxMsgRate,
-		done:         make(chan struct{}),
 	}
 }
 
 // Stop signals the Run loop to exit.
 func (h *Hub) Stop() {
-	close(h.done)
+	close(h.Quit)
 }
 
 // Run is the hub's main event loop. It must be started in its own goroutine.
 func (h *Hub) Run() {
 	for {
 		select {
-		case <-h.done:
-			// Graceful shutdown: close all client channels.
-			for _, group := range h.groups {
-				for client := range group {
-					client.CloseSend()
-				}
-			}
-			return
-
 		case client := <-h.Register:
 			h.handleRegister(client)
 
@@ -73,6 +65,15 @@ func (h *Hub) Run() {
 
 		case message := <-h.Broadcast:
 			h.handleBroadcast(message)
+
+		case <-h.Quit:
+			log.Println("Hub stopping, closing all connections...")
+			for _, group := range h.groups {
+				for client := range group {
+					h.handleUnregister(client)
+				}
+			}
+			return
 		}
 	}
 }

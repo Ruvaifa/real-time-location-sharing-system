@@ -48,12 +48,17 @@ func NewHandler(hub *ws.Hub, cfg *config.Config) *Handler {
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
 
+	// Global limiters
+	generalLimiter := appmw.NewIPRateLimiter(10, 20) // 10 req/s, 20 burst
+	loginLimiter := appmw.NewIPRateLimiter(1, 5)    // 1 login/s, 5 burst
+
 	r.Use(chimw.Logger)
 	r.Use(chimw.Recoverer)
 	r.Use(appmw.CORS(h.cfg.AllowedOrigins))
+	r.Use(appmw.RateLimit(generalLimiter))
 
 	// Public routes
-	r.Post("/login", h.Login)
+	r.With(appmw.RateLimit(loginLimiter)).Post("/login", h.Login)
 	r.Get("/health", h.Health)
 
 	// Protected WebSocket route

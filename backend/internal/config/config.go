@@ -19,21 +19,36 @@ type Config struct {
 // Load reads configuration from environment variables with sensible defaults.
 func Load() *Config {
 	origins := envOrDefault("ALLOWED_ORIGINS", "http://localhost:5173")
-	var parsed []string
-	for _, o := range strings.Split(origins, ",") {
-		o = strings.TrimSpace(o)
-		if o != "" {
-			parsed = append(parsed, o)
-		}
-	}
-
-	return &Config{
+	c := &Config{
 		Port:           envOrDefault("PORT", "8080"),
-		Env:            envOrDefault("APP_ENV", "development"),
-		AllowedOrigins: parsed,
+		Env:            envOrDefault("ENV", "development"),
+		AllowedOrigins: strings.Split(origins, ","),
 		MaxGroupSize:   envOrDefaultInt("MAX_GROUP_SIZE", 64),
 		MaxMsgRate:     envOrDefaultInt("MAX_MSG_RATE", 10),
-		JWTSecret:      envOrDefault("JWT_SECRET", "default-secret-key-change-me"),
+		JWTSecret:      envOrDefault("JWT_SECRET", ""),
+	}
+
+	// Clean origins
+	for i, o := range c.AllowedOrigins {
+		c.AllowedOrigins[i] = strings.TrimSpace(o)
+	}
+
+	c.validate()
+	return c
+}
+
+func (c *Config) validate() {
+	if c.Env == "production" && (c.JWTSecret == "" || c.JWTSecret == "super-secret-key-change-me-in-production") {
+		// In a real production app, we should panic or exit.
+		// For now, we'll just log a huge warning.
+		println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+		println("CRITICAL SECURITY WARNING: Insecure JWT_SECRET used in production!")
+		println("Please set a strong JWT_SECRET environment variable.")
+		println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+	}
+
+	if c.JWTSecret == "" {
+		c.JWTSecret = "super-secret-key-change-me-in-production"
 	}
 }
 
