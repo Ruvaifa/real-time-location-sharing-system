@@ -156,6 +156,7 @@ function MapScreen({ tileUrl }) {
   const isPaused = useAppStore((s) => s.isPaused);
   const togglePause = useAppStore((s) => s.togglePause);
   const setScreen = useAppStore((s) => s.setScreen);
+  const token = useAppStore((s) => s.token);
 
   const location = useLocationStore((s) => s.location);
   const setLocation = useLocationStore((s) => s.setLocation);
@@ -215,7 +216,7 @@ function MapScreen({ tileUrl }) {
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const host = import.meta.env.VITE_WS_HOST || "localhost:8080";
-    const qs = new URLSearchParams({ userID: username, name: username });
+    const qs = new URLSearchParams({ token: token });
     const socket = new WebSocket(
       `${protocol}//${host}/ws/${encodeURIComponent(groupId)}?${qs}`
     );

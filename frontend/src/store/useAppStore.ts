@@ -19,10 +19,12 @@ interface AppStore {
   groupId: string;
   location: LocationData | null;
   peers: Record<string, LocationData>;
+  token: string;
   setScreen: (screen: Screen) => void;
   setEmail: (email: string) => void;
   setUsername: (username: string) => void;
   setGroupId: (groupId: string) => void;
+  setToken: (token: string) => void;
   setLocation: (location: LocationData | null) => void;
   upsertPeer: (peer: LocationData) => void;
   clearLiveData: () => void;
@@ -37,10 +39,12 @@ export const useAppStore = create<AppStore>((set) => ({
   groupId: "",
   location: null,
   peers: {},
+  token: "",
   setScreen: (screen) => set({ screen }),
   setEmail: (email) => set({ email }),
   setUsername: (username) => set({ username }),
   setGroupId: (groupId) => set({ groupId }),
+  setToken: (token) => set({ token }),
   setLocation: (location) => set({ location }),
   upsertPeer: (peer) =>
     set((state) => ({
@@ -64,5 +68,6 @@ export const useAppStore = create<AppStore>((set) => ({
       groupId: "",
       location: null,
       peers: {},
+      token: "",
     }),
 }));
