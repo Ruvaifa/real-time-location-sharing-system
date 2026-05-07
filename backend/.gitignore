@@ -1,5 +1,7 @@
 # Compiled binaries
-server
+/server
+/server.exe
+/location-sharing-backend.exe
 *.exe
 *.dll
 *.so

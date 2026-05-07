@@ -53,30 +53,44 @@ const useAppStore = create((set, get) => ({
   setUsername: (username) => set({ username }),
   groupId: "",
   setGroupId: (groupId) => set({ groupId }),
+  token: "",
+  setToken: (token) => set({ token }),
 
   // --- Pause toggle ---
   isPaused: false,
   togglePause: () => set((state) => ({ isPaused: !state.isPaused })),
 
   // --- Validation + screen transition ---
-  joinGroup: () => {
-    const { username, groupId, setScreen } = get();
+  joinGroup: async () => {
+    const { username, groupId, setScreen, setToken } = get();
     const name = username.trim();
     const group = groupId.trim();
     if (!name || !group) {
       alert("Please enter a Username and Group ID to start.");
       return false;
     }
-    if (name.length > 32) {
-      alert("Username must be 32 characters or less.");
+
+    try {
+      // Fetch JWT token from backend
+      const host = import.meta.env.VITE_WS_HOST || "localhost:8080";
+      const protocol = window.location.protocol === "https:" ? "https:" : "http:";
+      const response = await fetch(`${protocol}//${host}/login?username=${encodeURIComponent(name)}`, {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to authenticate with backend");
+      }
+
+      const data = await response.json();
+      setToken(data.token);
+      setScreen("map");
+      return true;
+    } catch (err) {
+      console.error("Auth error:", err);
+      alert("Could not connect to the server. Is the backend running?");
       return false;
     }
-    if (group.length > 64) {
-      alert("Group ID must be 64 characters or less.");
-      return false;
-    }
-    setScreen("map");
-    return true;
   },
 }));
 

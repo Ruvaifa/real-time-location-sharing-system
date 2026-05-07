@@ -13,6 +13,7 @@ type Config struct {
 	AllowedOrigins []string
 	MaxGroupSize   int
 	MaxMsgRate     int // max messages per second per client
+	JWTSecret      string
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -32,6 +33,7 @@ func Load() *Config {
 		AllowedOrigins: parsed,
 		MaxGroupSize:   envOrDefaultInt("MAX_GROUP_SIZE", 64),
 		MaxMsgRate:     envOrDefaultInt("MAX_MSG_RATE", 10),
+		JWTSecret:      envOrDefault("JWT_SECRET", "default-secret-key-change-me"),
 	}
 }
 

@@ -83,6 +83,8 @@ func (h *Hub) handleRegister(client *Client) {
 		h.cache[client.GroupID] = make(map[string]model.LocationMessage)
 	}
 
+	log.Printf("Registering client %s to group %s", client.UserID, client.GroupID)
+
 	// Enforce max group size.
 	if len(h.groups[client.GroupID]) >= h.MaxGroupSize {
 		log.Printf("group %s full (%d), rejecting %s", client.GroupID, h.MaxGroupSize, client.UserID)
@@ -181,8 +183,11 @@ func (h *Hub) handleBroadcast(message HubMessage) {
 
 	group, ok := h.groups[message.Sender.GroupID]
 	if !ok {
+		log.Printf("Group %s not found for broadcast", message.Sender.GroupID)
 		return
 	}
+
+	log.Printf("Broadcasting message from %s to %d peers in group %s", loc.UserID, len(group)-1, loc.GroupID)
 
 	for client := range group {
 		if client == message.Sender {
