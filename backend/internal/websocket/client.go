@@ -1,103 +1,96 @@
 package websocket
 
 import (
-	"encoding/json"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"golang.org/x/time/rate"
 )
 
 const (
-	// Time allowed to write a message to the peer.
-	writeWait = 10 * time.Second
-
-	// Time allowed to read the next pong message from the peer.
-	pongWait = 60 * time.Second
-
-	// Send pings to peer with this period. Must be less than pongWait.
+	writeWait  = 10 * time.Second
+	pongWait   = 60 * time.Second
 	pingPeriod = (pongWait * 9) / 10
-
-	// Maximum message size allowed from peer.
-	maxMessageSize = 1024
+	maxMsgSize = 4096
 )
 
-// Client is a middleman between the websocket connection and the hub.
+// Client is a middleman between a single WebSocket connection and the Hub.
 type Client struct {
-	Hub *Hub
-
-	// The websocket connection.
-	Conn *websocket.Conn
-
-	// Buffered channel of outbound messages.
-	Send chan []byte
-
-	// Identity
+	Hub     *Hub
+	Conn    *websocket.Conn
+	Send    chan []byte
 	GroupID string
 	UserID  string
+
+	closeOnce sync.Once // prevents double-close panic on Send channel
 }
 
-// ReadPump pumps messages from the websocket connection to the hub.
-//
-// The application runs ReadPump in a per-connection goroutine. The application
-// ensures that there is at most one reader on a connection by executing all
-// reads from this goroutine.
+// CloseSend idempotently closes the Send channel.
+func (c *Client) CloseSend() {
+	c.closeOnce.Do(func() {
+		close(c.Send)
+	})
+}
+
+// ReadPump reads messages from the WebSocket and forwards them to the Hub.
+// It runs in its own goroutine per client.
 func (c *Client) ReadPump() {
 	defer func() {
 		c.Hub.Unregister <- c
 		c.Conn.Close()
 	}()
-	c.Conn.SetReadLimit(maxMessageSize)
+
+	limiter := rate.NewLimiter(rate.Limit(c.Hub.MaxMsgRate), c.Hub.MaxMsgRate*2)
+
+	c.Conn.SetReadLimit(maxMsgSize)
 	c.Conn.SetReadDeadline(time.Now().Add(pongWait))
-	c.Conn.SetPongHandler(func(string) error { c.Conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
+	c.Conn.SetPongHandler(func(string) error {
+		c.Conn.SetReadDeadline(time.Now().Add(pongWait))
+		return nil
+	})
+
 	for {
 		_, payload, err := c.Conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("error: %v", err)
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
+				log.Printf("ws read error (user=%s group=%s): %v", c.UserID, c.GroupID, err)
 			}
 			break
 		}
+
+		if !limiter.Allow() {
+			log.Printf("rate limited (user=%s group=%s)", c.UserID, c.GroupID)
+			continue
+		}
+
 		c.Hub.Broadcast <- HubMessage{Sender: c, Payload: payload}
 	}
 }
 
-// WritePump pumps messages from the hub to the websocket connection.
-//
-// A goroutine running WritePump is started for each connection. The
-// application ensures that there is at most one writer on a connection by
-// executing all writes from this goroutine.
+// WritePump drains the Send channel and writes messages to the WebSocket.
+// It runs in its own goroutine per client.
 func (c *Client) WritePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
 		c.Conn.Close()
 	}()
+
 	for {
 		select {
 		case message, ok := <-c.Send:
 			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
-				// The hub closed the channel.
+				// Hub closed the channel.
 				c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
-
-			w, err := c.Conn.NextWriter(websocket.TextMessage)
-			if err != nil {
+			if err := c.Conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				return
 			}
-			w.Write(message)
 
-			// Add queued chat messages to the current websocket message.
-			n := len(c.Send)
-			for i := 0; i < n; i++ {
-				w.Write(<-c.Send)
-			}
-
-			if err := w.Close(); err != nil {
-				return
-			}
 		case <-ticker.C:
 			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
@@ -105,14 +98,4 @@ func (c *Client) WritePump() {
 			}
 		}
 	}
-}
-
-// SendOfflineMessage sends a JSON notification that this client is offline.
-func (c *Client) SendOfflineMessage() {
-	msg := map[string]interface{}{
-		"userID":  c.UserID,
-		"offline": true,
-	}
-	payload, _ := json.Marshal(msg)
-	c.Hub.Broadcast <- HubMessage{Sender: c, Payload: payload}
 }

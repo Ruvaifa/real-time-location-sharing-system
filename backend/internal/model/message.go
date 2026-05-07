@@ -1,6 +1,6 @@
 package model
 
-// LocationMessage represents a user's location update or offline status.
+// LocationMessage is the primary message type sent over the wire in both directions.
 type LocationMessage struct {
 	UserID    string  `json:"userID"`
 	GroupID   string  `json:"groupID"`

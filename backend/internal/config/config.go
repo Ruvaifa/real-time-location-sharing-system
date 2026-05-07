@@ -6,41 +6,52 @@ import (
 	"strings"
 )
 
+// Config holds all runtime configuration loaded from environment variables.
 type Config struct {
 	Port           string
 	Env            string
 	AllowedOrigins []string
 	MaxGroupSize   int
-	MaxMsgRate     int
+	MaxMsgRate     int // max messages per second per client
 	JWTSecret      string
 }
 
-// Load fetches configuration from environment variables with sensible defaults.
+// Load reads configuration from environment variables with sensible defaults.
 func Load() *Config {
 	origins := envOrDefault("ALLOWED_ORIGINS", "http://localhost:5173")
-	
+	var parsed []string
+	for _, o := range strings.Split(origins, ",") {
+		o = strings.TrimSpace(o)
+		if o != "" {
+			parsed = append(parsed, o)
+		}
+	}
+
 	return &Config{
 		Port:           envOrDefault("PORT", "8080"),
-		Env:            envOrDefault("ENV", "development"),
-		AllowedOrigins: strings.Split(origins, ","),
-		MaxGroupSize:   envIntOrDefault("MAX_GROUP_SIZE", 50),
-		MaxMsgRate:     envIntOrDefault("MAX_MSG_RATE", 10),
-		JWTSecret:      envOrDefault("JWT_SECRET", "super-secret-key-change-me-in-production"),
+		Env:            envOrDefault("APP_ENV", "development"),
+		AllowedOrigins: parsed,
+		MaxGroupSize:   envOrDefaultInt("MAX_GROUP_SIZE", 64),
+		MaxMsgRate:     envOrDefaultInt("MAX_MSG_RATE", 10),
+		JWTSecret:      envOrDefault("JWT_SECRET", "default-secret-key-change-me"),
 	}
 }
 
 func envOrDefault(key, fallback string) string {
-	if value, ok := os.LookupEnv(key); ok {
-		return value
+	if v := os.Getenv(key); v != "" {
+		return v
 	}
 	return fallback
 }
 
-func envIntOrDefault(key string, fallback int) int {
-	if value, ok := os.LookupEnv(key); ok {
-		if i, err := strconv.Atoi(value); err == nil {
-			return i
-		}
+func envOrDefaultInt(key string, fallback int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
 	}
-	return fallback
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return fallback
+	}
+	return n
 }

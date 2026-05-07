@@ -16,29 +16,27 @@ import (
 )
 
 func main() {
-	// 1. Load Configuration from environment variables
+	// 1. Load Configuration
 	cfg := config.Load()
 
-	// 2. Initialize the WebSocket Hub (manages concurrency and broadcasts)
+	// 2. Initialize the WebSocket Hub
 	hub := websocket.NewHub(cfg.MaxGroupSize, cfg.MaxMsgRate)
 	go hub.Run()
 
-	// 3. Initialize Request Handlers (WebSocket + Health)
+	// 3. Initialize Handlers
 	h := handler.NewHandler(hub, cfg)
 	router := h.Routes()
 
 	// 4. Configure HTTP Server
 	srv := &http.Server{
-		Addr:    ":" + cfg.Port,
-		Handler: router,
-		// Good practice to set timeouts to prevent resource exhaustion
+		Addr:         ":" + cfg.Port,
+		Handler:      router,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 
-	// 5. Graceful Shutdown Logic
-	// This ensures we clean up channels and close connections before exiting.
+	// 5. Graceful Shutdown
 	idleConnsClosed := make(chan struct{})
 	go func() {
 		sigint := make(chan os.Signal, 1)
@@ -46,7 +44,7 @@ func main() {
 		<-sigint
 
 		log.Println("Shutting down server gracefully...")
-		hub.Stop() // Signal the Hub to close all client connections
+		hub.Stop()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

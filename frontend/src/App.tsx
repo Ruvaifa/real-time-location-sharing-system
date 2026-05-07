@@ -11,9 +11,10 @@ import { GlobeAnalytics } from "./components/ui/cobe-globe-analytics";
 import { LocationData, useAppStore } from "./store/useAppStore";
 
 
-function buildWsUrl(groupId: string, username: string): string {
+function buildWsUrl(groupId: string, token: string): string {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${window.location.host}/ws/${groupId}?userID=${encodeURIComponent(username)}&name=${encodeURIComponent(username)}`;
+  const host = import.meta.env.VITE_WS_HOST || window.location.host;
+  return `${protocol}//${host}/ws/${groupId}?token=${token}`;
 }
 // Fix Leaflet's default icon rendering issues
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -183,6 +184,7 @@ function PickerScreen() {
   const setUsername = useAppStore((state) => state.setUsername);
   const setGroupId = useAppStore((state) => state.setGroupId);
   const setScreen = useAppStore((state) => state.setScreen);
+  const setToken = useAppStore((state) => state.setToken);
 
   const canStart = username.trim() && groupId.trim();
 
@@ -213,12 +215,25 @@ function PickerScreen() {
 
         <button
           className="continue-btn"
-          onClick={() => {
+          onClick={async () => {
             if (!canStart) {
               alert("Please enter a Username and Room ID to start.");
               return;
             }
-            setScreen("map");
+            try {
+              const host = import.meta.env.VITE_WS_HOST || window.location.host;
+              const protocol = window.location.protocol === "https:" ? "https:" : "http:";
+              const response = await fetch(`${protocol}//${host}/login?username=${encodeURIComponent(username)}`, {
+                method: "POST",
+              });
+              if (!response.ok) throw new Error("Auth failed");
+              const data = await response.json();
+              setToken(data.token);
+              setScreen("map");
+            } catch (err) {
+              console.error(err);
+              alert("Could not connect to the server.");
+            }
           }}
           disabled={!canStart}
         >
@@ -275,6 +290,7 @@ function MapScreen() {
   const removePeer = useAppStore((state) => state.removePeer);
   const clearLiveData = useAppStore((state) => state.clearLiveData);
   const setScreen = useAppStore((state) => state.setScreen);
+  const token = useAppStore((state) => state.token);
 
   const ws = useRef<WebSocket | null>(null);
   const [tick, setTick] = useState(0);
@@ -362,7 +378,7 @@ function MapScreen() {
     function connect() {
       if (!isMounted) return;
       setWsStatus("connecting");
-      const socket = new WebSocket(buildWsUrl(groupId, username));
+      const socket = new WebSocket(buildWsUrl(groupId, token));
       ws.current = socket;
 
       socket.onopen = () => {
