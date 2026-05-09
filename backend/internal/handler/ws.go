@@ -50,7 +50,7 @@ func (h *Handler) Routes() chi.Router {
 
 	// Global limiters
 	generalLimiter := appmw.NewIPRateLimiter(10, 20) // 10 req/s, 20 burst
-	loginLimiter := appmw.NewIPRateLimiter(1, 5)    // 1 login/s, 5 burst
+	loginLimiter := appmw.NewIPRateLimiter(1, 5)     // 1 login/s, 5 burst
 
 	r.Use(chimw.Logger)
 	r.Use(chimw.Recoverer)

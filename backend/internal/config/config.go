@@ -14,6 +14,14 @@ type Config struct {
 	MaxGroupSize   int
 	MaxMsgRate     int // max messages per second per client
 	JWTSecret      string
+
+	DBHost                string
+	DBPort                string
+	DBUser                string
+	DBPassword            string
+	DBName                string
+	DBSSLMode             string
+	LocationRetentionDays int
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -21,11 +29,19 @@ func Load() *Config {
 	origins := envOrDefault("ALLOWED_ORIGINS", "http://localhost:5173")
 	c := &Config{
 		Port:           envOrDefault("PORT", "8080"),
-		Env:            envOrDefault("ENV", "development"),
+		Env:            envOrDefault("ENV", envOrDefault("APP_ENV", "development")),
 		AllowedOrigins: strings.Split(origins, ","),
 		MaxGroupSize:   envOrDefaultInt("MAX_GROUP_SIZE", 64),
 		MaxMsgRate:     envOrDefaultInt("MAX_MSG_RATE", 10),
 		JWTSecret:      envOrDefault("JWT_SECRET", ""),
+
+		DBHost:                envOrDefault("DB_HOST", "localhost"),
+		DBPort:                envOrDefault("DB_PORT", "5432"),
+		DBUser:                envOrDefault("DB_USER", "app"),
+		DBPassword:            envOrDefault("DB_PASSWORD", "app123"),
+		DBName:                envOrDefault("DB_NAME", "location_share"),
+		DBSSLMode:             envOrDefault("DB_SSLMODE", "disable"),
+		LocationRetentionDays: envOrDefaultInt("LOCATION_RETENTION_DAYS", 7),
 	}
 
 	// Clean origins
@@ -35,6 +51,10 @@ func Load() *Config {
 
 	c.validate()
 	return c
+}
+
+func (c *Config) DBConnString() string {
+	return "postgres://" + c.DBUser + ":" + c.DBPassword + "@" + c.DBHost + ":" + c.DBPort + "/" + c.DBName + "?sslmode=" + c.DBSSLMode
 }
 
 func (c *Config) validate() {

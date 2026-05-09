@@ -16,6 +16,7 @@ An interactive real-time location sharing platform with a React/Leaflet frontend
 
 - [Node.js](https://nodejs.org/) (for the frontend)
 - [Go](https://go.dev/) 1.23+ (for the backend)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (recommended for the full stack)
 
 ### 1. Configure Environment
 
@@ -24,7 +25,46 @@ cp .env.example .env
 # Edit .env and set ALLOWED_ORIGINS, VITE_WS_HOST, etc.
 ```
 
-### 2. Start the Go Backend
+### 2. Run with Docker (Recommended)
+
+This runs the frontend, backend, Postgres, and the migration container.
+
+```bash
+docker compose up --build
+```
+
+Next runs do not require rebuilds unless you changed Dockerfiles or dependencies:
+
+```bash
+docker compose up
+```
+
+Open:
+- Frontend: http://localhost:5173
+- Backend health: http://localhost:8080/health
+
+To inspect database records:
+
+```bash
+docker compose exec db psql -U app -d location_share
+```
+
+Example queries:
+
+```sql
+SELECT * FROM users ORDER BY created_at DESC LIMIT 10;
+SELECT * FROM locations ORDER BY created_at DESC LIMIT 20;
+```
+
+You can also use the helper script (PowerShell):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\check-db.ps1
+```
+
+### 3. Run Locally (Without Docker)
+
+### 3.1 Start the Go Backend
 
 ```bash
 cd backend
@@ -34,7 +74,7 @@ make dev
 
 The backend listens on `:8080` by default (configurable via `PORT` env var).
 
-### 3. Start the React Frontend
+### 3.2 Start the React Frontend
 
 ```bash
 npm install
@@ -42,6 +82,8 @@ npm run dev
 ```
 
 The frontend runs on `:5173` and connects to the backend via the `VITE_WS_HOST` env var.
+
+If running locally without Docker, you'll also need Postgres and the migrations in `backend/migrations`.
 
 ## Project Structure
 
@@ -53,11 +95,16 @@ The frontend runs on `:5173` and connects to the backend via the `VITE_WS_HOST` 
 │   │   ├── handler/         # HTTP/WebSocket handlers (chi router)
 │   │   ├── middleware/      # CORS middleware with configurable origins
 │   │   ├── model/           # Data types (LocationMessage, HubMessage)
+│   │   ├── storage/          # Postgres store and retention pruner
 │   │   ├── validate/        # Coordinate and input validation
 │   │   └── websocket/       # Hub + Client with rate limiting
+│   ├── migrations/           # Database schema migrations
 │   ├── pkg/apierr/          # JSON error response helper
 │   ├── Dockerfile           # Multi-stage Alpine build
+│   ├── Dockerfile.dev       # Development Dockerfile
 │   └── Makefile             # build, dev, test, lint
+├── scripts/
+│   └── check-db.ps1          # Query recent DB records
 ├── src/
 │   ├── App.jsx              # React app with map + picker screens
 │   ├── main.jsx             # Entry point
@@ -91,6 +138,14 @@ The frontend runs on `:5173` and connects to the backend via the `VITE_WS_HOST` 
 | `MAX_GROUP_SIZE` | `64` | Max clients per group |
 | `MAX_MSG_RATE` | `10` | Max messages per second per client |
 | `VITE_WS_HOST` | `localhost:8080` | WebSocket host for the frontend |
+| `VITE_BACKEND_HTTP` | `http://localhost:8080` | HTTP base URL used by Vite proxy |
+| `DB_HOST` | `localhost` | Postgres host |
+| `DB_PORT` | `5432` | Postgres port |
+| `DB_USER` | `app` | Postgres username |
+| `DB_PASSWORD` | `app123` | Postgres password |
+| `DB_NAME` | `location_share` | Postgres database name |
+| `DB_SSLMODE` | `disable` | Postgres SSL mode |
+| `LOCATION_RETENTION_DAYS` | `7` | Days to retain location history |
 
 ## License
 

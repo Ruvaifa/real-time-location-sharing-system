@@ -1,11 +1,13 @@
 package websocket
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"time"
 
 	"location-sharing-backend/internal/model"
+	"location-sharing-backend/internal/storage"
 	"location-sharing-backend/internal/validate"
 )
 
@@ -32,10 +34,11 @@ type Hub struct {
 
 	MaxGroupSize int
 	MaxMsgRate   int
+	Store        storage.Store
 }
 
 // NewHub allocates a Hub ready to Run().
-func NewHub(maxGroupSize, maxMsgRate int) *Hub {
+func NewHub(maxGroupSize, maxMsgRate int, store storage.Store) *Hub {
 	return &Hub{
 		groups:       make(map[string]map[*Client]bool),
 		cache:        make(map[string]map[string]model.LocationMessage),
@@ -45,6 +48,7 @@ func NewHub(maxGroupSize, maxMsgRate int) *Hub {
 		Quit:         make(chan struct{}),
 		MaxGroupSize: maxGroupSize,
 		MaxMsgRate:   maxMsgRate,
+		Store:        store,
 	}
 }
 
@@ -176,6 +180,12 @@ func (h *Hub) handleBroadcast(message HubMessage) {
 	}
 	h.cache[loc.GroupID][loc.UserID] = loc
 
+	// Persist asynchronously to avoid blocking broadcasts.
+	if h.Store != nil {
+		locCopy := loc
+		go h.persistLocation(locCopy)
+	}
+
 	// Re-marshal the sanitized message.
 	clean, err := json.Marshal(loc)
 	if err != nil {
@@ -206,5 +216,18 @@ func (h *Hub) handleBroadcast(message HubMessage) {
 				delete(h.cache, message.Sender.GroupID)
 			}
 		}
+	}
+}
+
+func (h *Hub) persistLocation(loc model.LocationMessage) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if err := h.Store.UpsertUser(ctx, loc.UserID, loc.Name); err != nil {
+		log.Printf("db upsert user error (user=%s): %v", loc.UserID, err)
+		return
+	}
+	if err := h.Store.InsertLocation(ctx, loc); err != nil {
+		log.Printf("db insert location error (user=%s): %v", loc.UserID, err)
 	}
 }
