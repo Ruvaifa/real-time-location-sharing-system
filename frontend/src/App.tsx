@@ -1,28 +1,27 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MapContainer, TileLayer, Marker, useMap, Popup } from "react-leaflet";
-import { Moon, Sun, Compass } from "lucide-react";
+import { MapContainer, TileLayer, Marker, Polyline, useMap, useMapEvents, Popup } from "react-leaflet";
+import { Moon, Sun, Compass, Radio, Navigation, Route } from "lucide-react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
 import "./styles.css";
 import { BottomNavBar, NavItem } from "./components/ui/bottom-nav-bar";
 import { GlobeAnalytics } from "./components/ui/cobe-globe-analytics";
-import { LocationData, useAppStore } from "./store/useAppStore";
-
+import { LocationData, Route as RouteType, useAppStore } from "./store/useAppStore";
 
 function buildWsUrl(groupId: string, token: string): string {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const host = import.meta.env.VITE_WS_HOST || window.location.host;
   return `${protocol}//${host}/ws/${groupId}?token=${token}`;
 }
-// Fix Leaflet's default icon rendering issues
+
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl:
     "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-shadow.png",
 });
 
 function calculateDistance(
@@ -55,6 +54,128 @@ const MAP_STYLES = {
   voyager: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
 } as const;
 const MAP_STYLE_ORDER: Array<keyof typeof MAP_STYLES> = ["dark", "light", "voyager"];
+
+const SIM_ROUTES: RouteType[] = [
+  {
+    id: "lodhi-garden-loop",
+    name: "Lodhi Garden Loop",
+    distanceKm: 4.2,
+    waypoints: [
+      [28.5914, 77.2270],
+      [28.5928, 77.2295],
+      [28.5950, 77.2310],
+      [28.5975, 77.2320],
+      [28.5995, 77.2305],
+      [28.6010, 77.2280],
+      [28.6005, 77.2250],
+      [28.5985, 77.2230],
+      [28.5960, 77.2225],
+      [28.5940, 77.2240],
+      [28.5914, 77.2270],
+    ],
+  },
+  {
+    id: "india-gate-rajpath",
+    name: "India Gate - Rajpath",
+    distanceKm: 5.8,
+    waypoints: [
+      [28.6129, 77.2295],
+      [28.6118, 77.2270],
+      [28.6100, 77.2240],
+      [28.6085, 77.2210],
+      [28.6070, 77.2185],
+      [28.6055, 77.2160],
+      [28.6040, 77.2130],
+      [28.6025, 77.2100],
+      [28.6010, 77.2075],
+      [28.5995, 77.2050],
+      [28.5980, 77.2030],
+    ],
+  },
+  {
+    id: "connaught-place-circuit",
+    name: "Connaught Place Circuit",
+    distanceKm: 3.1,
+    waypoints: [
+      [28.6315, 77.2167],
+      [28.6330, 77.2190],
+      [28.6345, 77.2215],
+      [28.6355, 77.2240],
+      [28.6345, 77.2265],
+      [28.6330, 77.2280],
+      [28.6310, 77.2275],
+      [28.6295, 77.2255],
+      [28.6285, 77.2230],
+      [28.6290, 77.2200],
+      [28.6315, 77.2167],
+    ],
+  },
+  {
+    id: "chanakyapuri-embassy",
+    name: "Chanakyapuri Embassy Row",
+    distanceKm: 6.5,
+    waypoints: [
+      [28.5975, 77.1880],
+      [28.5990, 77.1910],
+      [28.6010, 77.1940],
+      [28.6030, 77.1965],
+      [28.6055, 77.1985],
+      [28.6075, 77.1970],
+      [28.6090, 77.1945],
+      [28.6080, 77.1920],
+      [28.6060, 77.1895],
+      [28.6035, 77.1875],
+      [28.6010, 77.1860],
+      [28.5990, 77.1850],
+      [28.5975, 77.1880],
+    ],
+  },
+];
+
+const CYCLING_SPEED_KMH = 20;
+const TICK_INTERVAL_MS = 1000;
+
+function getRouteLengthMeters(route: RouteType): number {
+  let total = 0;
+  for (let i = 1; i < route.waypoints.length; i++) {
+    total += calculateDistance(
+      route.waypoints[i - 1][0], route.waypoints[i - 1][1],
+      route.waypoints[i][0], route.waypoints[i][1]
+    );
+  }
+  return total;
+}
+
+function getRoutePosition(
+  route: RouteType,
+  distanceMeters: number
+): { lat: number; lng: number; bearing: number } {
+  const wps = route.waypoints;
+  let remaining = distanceMeters;
+
+  for (let i = 1; i < wps.length; i++) {
+    const segLen = calculateDistance(
+      wps[i - 1][0], wps[i - 1][1],
+      wps[i][0], wps[i][1]
+    );
+
+    if (remaining <= segLen || i === wps.length - 1) {
+      const t = segLen > 0 ? Math.min(remaining / segLen, 1) : 0;
+      const lat = wps[i - 1][0] + (wps[i][0] - wps[i - 1][0]) * t;
+      const lng = wps[i - 1][1] + (wps[i][1] - wps[i - 1][1]) * t;
+      const bearing =
+        (Math.atan2(wps[i][1] - wps[i - 1][1], wps[i][0] - wps[i - 1][0]) *
+          180) /
+        Math.PI;
+      return { lat, lng, bearing };
+    }
+
+    remaining -= segLen;
+  }
+
+  const last = wps[wps.length - 1];
+  return { lat: last[0], lng: last[1], bearing: 0 };
+}
 
 function getHashColor(name: string): string {
   let hash = 0;
@@ -247,31 +368,6 @@ function PickerScreen() {
   );
 }
 
-function LocationPanner({ location }: { location: LocationData | null }) {
-  const map = useMap();
-  const initiallyPanned = useRef(false);
-
-  useEffect(() => {
-    if (location && !initiallyPanned.current) {
-      map.flyTo([location.lat, location.lng], 16);
-      initiallyPanned.current = true;
-    }
-  }, [location, map]);
-
-  return null;
-}
-
-function RecenterMap({ trigger, location }: { trigger: number; location: LocationData | null }) {
-  const map = useMap();
-
-  useEffect(() => {
-    if (!location) return;
-    map.flyTo([location.lat, location.lng], Math.max(map.getZoom(), 15));
-  }, [trigger, location, map]);
-
-  return null;
-}
-
 function formatTimeAgo(ts: number): string {
   const diff = Math.floor((Date.now() - ts) / 1000);
   if (diff < 5) return "just now";
@@ -291,12 +387,17 @@ function MapScreen() {
   const clearLiveData = useAppStore((state) => state.clearLiveData);
   const setScreen = useAppStore((state) => state.setScreen);
   const token = useAppStore((state) => state.token);
+  const sim = useAppStore((state) => state.sim);
+  const startSim = useAppStore((state) => state.startSim);
+  const stopSim = useAppStore((state) => state.stopSim);
+  const setSimProgress = useAppStore((state) => state.setSimProgress);
 
   const ws = useRef<WebSocket | null>(null);
   const [tick, setTick] = useState(0);
   const [view, setView] = useState<"globe" | "map">("globe");
   const [mapStyle, setMapStyle] = useState<keyof typeof MAP_STYLES>("dark");
-  const [recenterTrigger, setRecenterTrigger] = useState(0);
+  const [showRoutePicker, setShowRoutePicker] = useState(false);
+  const recenterRef = useRef<() => void>(() => {});
 
   const peerEntries = useMemo(() => Object.entries(peers), [peers]);
   const mapStyleItems: NavItem[] = useMemo(
@@ -309,7 +410,21 @@ function MapScreen() {
   );
   const activeStyleIndex = MAP_STYLE_ORDER.indexOf(mapStyle);
 
+  const toggleSimulate = useCallback(
+    (route: RouteType) => {
+      if (sim.active) {
+        stopSim();
+      } else {
+        startSim(route);
+      }
+      setShowRoutePicker(false);
+    },
+    [sim.active, startSim, stopSim]
+  );
+
   useEffect(() => {
+    if (sim.active) return;
+
     if (!navigator.geolocation) {
       console.error("Geolocation is not supported by your browser");
       return;
@@ -343,31 +458,45 @@ function MapScreen() {
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [username, groupId]);
+  }, [username, groupId, sim.active, setLocation]);
 
-  // useEffect(() => {
-  //   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  //   const socket = new WebSocket(
-  //     `${protocol}//${window.location.host}/ws/${groupId}?userID=${username}&name=${username}`
-  //   );
-  //   ws.current = socket;
+  useEffect(() => {
+    if (!sim.active || !sim.route) return;
 
-  //   socket.onmessage = (event) => {
-  //     try {
-  //       const data: LocationData = JSON.parse(event.data);
+    const totalDistance = getRouteLengthMeters(sim.route);
+    const speedMs = CYCLING_SPEED_KMH / 3.6;
+    const distancePerTick = speedMs * (TICK_INTERVAL_MS / 1000);
 
-  //       if (data.userID !== username) {
-  //         upsertPeer(data);
-  //       }
-  //     } catch (err) {
-  //       console.error("Failed to parse websocket message", err);
-  //     }
-  //   };
+    const interval = setInterval(() => {
+      const currentProgress = useAppStore.getState().sim.progress;
+      let newDist = currentProgress + distancePerTick;
 
-  //   return () => {
-  //     socket.close();
-  //   };
-  // }, [groupId, username, upsertPeer]);
+      if (newDist >= totalDistance) {
+        newDist = 0;
+      }
+
+      setSimProgress(newDist);
+
+      const pos = getRoutePosition(sim.route!, newDist);
+      const newLoc: LocationData = {
+        userID: username,
+        groupID: groupId,
+        lat: parseFloat(pos.lat.toFixed(5)),
+        lng: parseFloat(pos.lng.toFixed(5)),
+        name: username,
+        timestamp: Date.now(),
+        speed: speedMs,
+      };
+      setLocation(newLoc);
+
+      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+        ws.current.send(JSON.stringify(newLoc));
+      }
+    }, TICK_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [sim.active, sim.route, username, groupId, setLocation, setSimProgress]);
+
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttempt = useRef(0);
   const [wsStatus, setWsStatus] = useState<"connecting" | "connected" | "disconnected">("connecting");
@@ -420,7 +549,6 @@ function MapScreen() {
       ws.current?.close();
     };
   }, [groupId, username, upsertPeer, removePeer]);
-  //-----------------------
 
   useEffect(() => {
     const interval = setInterval(() => setTick((t) => t + 1), 5000);
@@ -429,6 +557,11 @@ function MapScreen() {
 
   const activePeers = peerEntries.filter(([, peer]) => Date.now() - peer.timestamp < 60000).length;
   const lastPulse = location ? formatTimeAgo(location.timestamp) : "awaiting GPS";
+
+  const simProgressPct =
+    sim.active && sim.route
+      ? ((sim.progress / getRouteLengthMeters(sim.route)) * 100).toFixed(0)
+      : "0";
 
   return (
     <motion.div
@@ -444,7 +577,6 @@ function MapScreen() {
         <>
           <div className="map-top-bar">
             <div className="trip-chip">
-              {/* <span className="live-dot" />  */}
               <span
                 className="live-dot"
                 style={{
@@ -454,6 +586,14 @@ function MapScreen() {
                 }}
               />
               <span>Room {groupId}</span>
+              {sim.active && (
+                <>
+                  <span className="chip-separator">|</span>
+                  <span style={{ color: "#FF9800", fontWeight: 700 }}>
+                    SIM {simProgressPct}%
+                  </span>
+                </>
+              )}
               <span className="chip-separator">|</span>
               <span>{activePeers + 1} live</span>
             </div>
@@ -468,12 +608,50 @@ function MapScreen() {
               >
                 Copy room
               </button>
-              <button className="crosshair-btn" onClick={() => setRecenterTrigger((v) => v + 1)}>
-                &oplus;
+              <button
+                className="crosshair-btn"
+                onClick={() => recenterRef.current()}
+                title="Recenter on me"
+              >
+                <Navigation size={18} />
               </button>
+              <div className="sim-btn-wrap">
+                <button
+                  className={`map-pill-btn ${sim.active ? "sim-active" : ""}`}
+                  onClick={() => {
+                    if (sim.active) {
+                      stopSim();
+                    } else {
+                      setShowRoutePicker(!showRoutePicker);
+                    }
+                  }}
+                >
+                  <Radio size={14} style={{ marginRight: 4, verticalAlign: -2 }} />
+                  {sim.active ? "Stop Sim" : "Sim Route"}
+                </button>
+                {showRoutePicker && !sim.active && (
+                  <div className="route-picker">
+                    <div className="route-picker-header">Choose a route</div>
+                    {SIM_ROUTES.map((route) => (
+                      <button
+                        key={route.id}
+                        className="route-option"
+                        onClick={() => toggleSimulate(route)}
+                      >
+                        <Route size={14} />
+                        <div className="route-option-info">
+                          <span className="route-option-name">{route.name}</span>
+                          <span className="route-option-dist">{route.distanceKm} km</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <button
                 className="map-pill-btn danger"
                 onClick={() => {
+                  stopSim();
                   clearLiveData();
                   setScreen("picker");
                 }}
@@ -526,14 +704,29 @@ function MapScreen() {
               style={{ width: "100%", height: "100%" }}
             >
               <MapContainer
-                center={[37.7749, -122.4194]}
-                zoom={3}
+                center={[28.6139, 77.2090]}
+                zoom={13}
                 zoomControl={false}
                 style={{ width: "100%", height: "100%", backgroundColor: "#1e1e1e" }}
               >
                 <TileLayer url={MAP_STYLES[mapStyle]} />
-                <LocationPanner location={location} />
-                <RecenterMap trigger={recenterTrigger} location={location} />
+                <MapBehavior
+                  location={location}
+                  simActive={sim.active}
+                  onRecenterRef={recenterRef}
+                />
+
+                {sim.active && sim.route && (
+                  <Polyline
+                    positions={sim.route.waypoints}
+                    pathOptions={{
+                      color: "#FF9800",
+                      weight: 4,
+                      opacity: 0.7,
+                      dashArray: "8 6",
+                    }}
+                  />
+                )}
 
                 {location && (
                   <Marker
@@ -622,7 +815,6 @@ function MapScreen() {
         </AnimatePresence>
       </div>
 
-      {/* Users list panel */}
       {view === "map" && (
         <div className="users-panel" style={{ zIndex: 10 }}>
           <div className="drag-handle" />
@@ -674,4 +866,53 @@ function MapScreen() {
       )}
     </motion.div>
   );
+}
+
+function MapBehavior({
+  location,
+  simActive,
+  onRecenterRef,
+}: {
+  location: LocationData | null;
+  simActive: boolean;
+  onRecenterRef: React.MutableRefObject<() => void>;
+}) {
+  const map = useMap();
+  const hasPannedRef = useRef(false);
+  const initialFixDoneRef = useRef(false);
+  const prevSimActiveRef = useRef(simActive);
+
+  useMapEvents({
+    dragstart: () => { hasPannedRef.current = true; },
+    zoomstart: () => { hasPannedRef.current = true; },
+  });
+
+  useEffect(() => {
+    if (simActive && !prevSimActiveRef.current) {
+      initialFixDoneRef.current = false;
+      hasPannedRef.current = false;
+    }
+    prevSimActiveRef.current = simActive;
+  }, [simActive]);
+
+  useEffect(() => {
+    if (location && !initialFixDoneRef.current) {
+      map.flyTo([location.lat, location.lng], 16, { duration: 0.8 });
+      initialFixDoneRef.current = true;
+    }
+  }, [location, map]);
+
+  useEffect(() => {
+    onRecenterRef.current = () => {
+      if (location) {
+        map.flyTo([location.lat, location.lng], Math.max(map.getZoom(), 15), {
+          duration: 0.8,
+        });
+        hasPannedRef.current = false;
+        initialFixDoneRef.current = true;
+      }
+    };
+  }, [location, map, onRecenterRef]);
+
+  return null;
 }

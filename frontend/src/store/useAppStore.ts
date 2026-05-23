@@ -12,6 +12,19 @@ export interface LocationData {
   speed?: number;
 }
 
+export interface Route {
+  id: string;
+  name: string;
+  distanceKm: number;
+  waypoints: [number, number][];
+}
+
+interface SimState {
+  active: boolean;
+  route: Route | null;
+  progress: number;
+}
+
 interface AppStore {
   screen: Screen;
   email: string;
@@ -20,6 +33,7 @@ interface AppStore {
   location: LocationData | null;
   peers: Record<string, LocationData>;
   token: string;
+  sim: SimState;
   setScreen: (screen: Screen) => void;
   setEmail: (email: string) => void;
   setUsername: (username: string) => void;
@@ -29,7 +43,10 @@ interface AppStore {
   upsertPeer: (peer: LocationData) => void;
   clearLiveData: () => void;
   resetSession: () => void;
-  removePeer: (userID: string) => void
+  removePeer: (userID: string) => void;
+  startSim: (route: Route) => void;
+  stopSim: () => void;
+  setSimProgress: (progress: number) => void;
 }
 
 export const useAppStore = create<AppStore>((set) => ({
@@ -40,6 +57,7 @@ export const useAppStore = create<AppStore>((set) => ({
   location: null,
   peers: {},
   token: "",
+  sim: { active: false, route: null, progress: 0 },
   setScreen: (screen) => set({ screen }),
   setEmail: (email) => set({ email }),
   setUsername: (username) => set({ username }),
@@ -69,5 +87,12 @@ export const useAppStore = create<AppStore>((set) => ({
       location: null,
       peers: {},
       token: "",
+      sim: { active: false, route: null, progress: 0 },
     }),
+  startSim: (route) =>
+    set({ sim: { active: true, route, progress: 0 } }),
+  stopSim: () =>
+    set({ sim: { active: false, route: null, progress: 0 } }),
+  setSimProgress: (progress) =>
+    set((state) => ({ sim: { ...state.sim, progress } })),
 }));

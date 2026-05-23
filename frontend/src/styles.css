@@ -739,3 +739,78 @@ h4,
 .bottom-nav-label-inactive {
   opacity: 0;
 }
+
+/* Simulation toggle */
+.sim-active {
+  background: linear-gradient(120deg, #FF9800, #F57C00) !important;
+  color: #fff !important;
+  border-color: rgba(255, 152, 0, 0.6) !important;
+}
+
+.sim-btn-wrap {
+  position: relative;
+}
+
+.route-picker {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 260px;
+  background: rgba(30, 30, 30, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(51, 51, 51, 0.8);
+  border-radius: 14px;
+  padding: 8px;
+  z-index: 2000;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+}
+
+.route-picker-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 6px 10px 8px;
+}
+
+.route-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px;
+  background: transparent;
+  border: none;
+  border-radius: 10px;
+  color: #fff;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.route-option:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.route-option svg {
+  color: #FF9800;
+  flex-shrink: 0;
+}
+
+.route-option-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.route-option-name {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.route-option-dist {
+  font-size: 11px;
+  color: #9ca3af;
+}
