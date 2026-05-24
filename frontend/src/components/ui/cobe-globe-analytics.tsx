@@ -187,27 +187,26 @@ export function GlobeAnalytics({
           zIndex: 20
         }}
       >
-        <div style={{ color: "#9ca3af", fontSize: "14px", pointerEvents: "none", fontWeight: "500", opacity: 0.8 }}>
+        <div style={{ color: "var(--ink-soft)", fontSize: "14px", pointerEvents: "none", fontWeight: "500", opacity: 0.9 }}>
           Scroll up to enter map
         </div>
         <button 
           onClick={onZoomIn}
           style={{
             padding: "10px 24px",
-            backgroundColor: "rgba(30, 30, 30, 0.9)",
-            backdropFilter: "blur(12px)",
-            color: "white",
-            border: "1px solid rgba(51, 51, 51, 0.8)",
+            backgroundColor: "var(--bg-panel)",
+            color: "var(--ink)",
+            border: "1px solid var(--outline)",
             borderRadius: "9999px",
             fontSize: "14px",
             fontWeight: "500",
             pointerEvents: "auto",
-            boxShadow: "0 10px 25px rgba(0, 0, 0, 0.4)",
+            boxShadow: "var(--shadow-strong)",
             cursor: "pointer",
             transition: "background-color 0.2s"
           }}
-          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "rgba(40, 40, 40, 0.95)"}
-          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "rgba(30, 30, 30, 0.9)"}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "var(--bg-panel-strong)"}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "var(--bg-panel)"}
         >
           Enter Map
         </button>
