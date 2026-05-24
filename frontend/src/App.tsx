@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MapContainer, TileLayer, Marker, Polyline, useMap, useMapEvents, Popup } from "react-leaflet";
-import { Moon, Sun, Compass, Radio, Navigation, Route } from "lucide-react";
+import { MapContainer, TileLayer, Marker, Polyline, CircleMarker, useMap, useMapEvents, Popup } from "react-leaflet";
+import { Moon, Sun, Compass, Radio, Navigation, Route, Flag } from "lucide-react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
 import "./styles.css";
 import { BottomNavBar, NavItem } from "./components/ui/bottom-nav-bar";
 import { GlobeAnalytics } from "./components/ui/cobe-globe-analytics";
-import { LocationData, Route as RouteType, useAppStore } from "./store/useAppStore";
+import { DestinationSearch } from "./components/DestinationSearch";
+import { TripPanel } from "./components/TripPanel";
+import { LocationData, Route as RouteType, useAppStore, sendWsMessage } from "./store/useAppStore";
+import { decodePolyline } from "./lib/routing";
+import { fetchActiveTrip, parseRouteCoordinates } from "./lib/trip";
 
 function buildWsUrl(groupId: string, token: string): string {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -24,7 +28,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-shadow.png",
 });
 
-function calculateDistance(
+export function calculateDistance(
   lat1: number,
   lon1: number,
   lat2: number,
@@ -391,6 +395,13 @@ function MapScreen() {
   const startSim = useAppStore((state) => state.startSim);
   const stopSim = useAppStore((state) => state.stopSim);
   const setSimProgress = useAppStore((state) => state.setSimProgress);
+  const trip = useAppStore((state) => state.trip);
+  const setTrip = useAppStore((state) => state.setTrip);
+  const updateTripParticipants = useAppStore((state) => state.updateTripParticipants);
+  const setTripStatus = useAppStore((state) => state.setTripStatus);
+  const setWs = useAppStore((state) => state.setWs);
+  const fitBounds = useAppStore((state) => state.fitBounds);
+  const requestFitBounds = useAppStore((state) => state.requestFitBounds);
 
   const ws = useRef<WebSocket | null>(null);
   const [tick, setTick] = useState(0);
@@ -444,7 +455,7 @@ function MapScreen() {
         setLocation(newLoc);
 
         if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-          ws.current.send(JSON.stringify(newLoc));
+          ws.current.send(JSON.stringify({ type: "location", payload: newLoc }));
         }
       },
       (error) => {
@@ -490,7 +501,7 @@ function MapScreen() {
       setLocation(newLoc);
 
       if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-        ws.current.send(JSON.stringify(newLoc));
+        ws.current.send(JSON.stringify({ type: "location", payload: newLoc }));
       }
     }, TICK_INTERVAL_MS);
 
@@ -509,23 +520,101 @@ function MapScreen() {
       setWsStatus("connecting");
       const socket = new WebSocket(buildWsUrl(groupId, token));
       ws.current = socket;
+      setWs(socket);
 
       socket.onopen = () => {
         if (!isMounted) return;
         setWsStatus("connected");
         reconnectAttempt.current = 0;
+
+        fetchActiveTrip(groupId).then((tripData) => {
+          if (!isMounted || !tripData) return;
+          const currentTrip = useAppStore.getState().trip;
+          if (currentTrip) return;
+          const decoded: import("./store/useAppStore").TripData = {
+            id: tripData.id,
+            creatorID: tripData.creatorID,
+            creatorName: tripData.creatorName,
+            origin: [tripData.originLat, tripData.originLng],
+            originName: tripData.originName,
+            dest: [tripData.destLat, tripData.destLng],
+            destName: tripData.destName,
+            routeCoordinates: tripData.routeGeometry
+              ? parseRouteCoordinates(tripData.routeGeometry)
+              : [],
+            distanceMeters: tripData.distanceMeters,
+            durationSeconds: tripData.durationSeconds,
+            status: tripData.status as import("./store/useAppStore").TripData["status"],
+            participants: tripData.participants || [],
+            startedAt: tripData.startedAt || null,
+          };
+          setTrip(decoded);
+          requestFitBounds([decoded.origin, decoded.dest]);
+          if (tripData.creatorID !== username) {
+            sendWsMessage("trip_join");
+          }
+        }).catch(() => {});
       };
 
       socket.onmessage = (event) => {
         if (!isMounted) return;
         try {
-          const data: LocationData = JSON.parse(event.data);
-          if ((data as any).offline) {
-            removePeer(data.userID);
-            return;
-          }
-          if (data.userID !== username) {
-            upsertPeer(data);
+          const msg = JSON.parse(event.data);
+          const type = msg.type || "location";
+          const data = msg.payload || msg;
+          console.log("[WS RECV]", type, data);
+
+          switch (type) {
+            case "location":
+              if (data.offline) {
+                removePeer(data.userID);
+              } else if (data.userID !== username) {
+                upsertPeer(data);
+              }
+              break;
+            case "trip_created": {
+              const tripData: import("./store/useAppStore").TripData = {
+                id: data.id,
+                creatorID: data.creatorID,
+                creatorName: data.creatorName,
+                origin: [data.originLat, data.originLng],
+                originName: data.originName,
+                dest: [data.destLat, data.destLng],
+                destName: data.destName,
+                routeCoordinates: parseRouteCoordinates(data.routeGeometry || ""),
+                distanceMeters: data.distanceMeters,
+                durationSeconds: data.durationSeconds,
+                status: data.status,
+                participants: data.participants || [],
+                startedAt: data.startedAt || null,
+              };
+              setTrip(tripData);
+              requestFitBounds([tripData.origin, tripData.dest]);
+              if (data.creatorID !== username) {
+                sendWsMessage("trip_join");
+              }
+              break;
+            }
+            case "trip_joined":
+              if (data.participants) {
+                const prev = useAppStore.getState().trip;
+                if (prev) setTrip({ ...prev, participants: data.participants });
+              }
+              break;
+            case "trip_left":
+              if (data.participants) {
+                const prev = useAppStore.getState().trip;
+                if (prev) setTrip({ ...prev, participants: data.participants });
+              }
+              break;
+            case "trip_started": {
+              const prev = useAppStore.getState().trip;
+              if (prev) setTrip({ ...prev, status: "active", startedAt: data.startedAt || prev.startedAt });
+              break;
+            }
+            case "trip_ended":
+              setTrip(null);
+              break;
           }
         } catch (err) {
           console.error("Failed to parse websocket message", err);
@@ -547,8 +636,9 @@ function MapScreen() {
       isMounted = false;
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
       ws.current?.close();
+      setWs(null);
     };
-  }, [groupId, username, upsertPeer, removePeer]);
+  }, [groupId, username, upsertPeer, removePeer, setTrip, updateTripParticipants, setTripStatus, setWs]);
 
   useEffect(() => {
     const interval = setInterval(() => setTick((t) => t + 1), 5000);
@@ -674,6 +764,8 @@ function MapScreen() {
               }}
             />
           </div>
+
+          <DestinationSearch />
         </>
       )}
 
@@ -713,6 +805,7 @@ function MapScreen() {
                 <MapBehavior
                   location={location}
                   simActive={sim.active}
+                  fitBounds={fitBounds}
                   onRecenterRef={recenterRef}
                 />
 
@@ -726,6 +819,33 @@ function MapScreen() {
                       dashArray: "8 6",
                     }}
                   />
+                )}
+
+                {trip && trip.routeCoordinates.length > 0 && (
+                  <>
+                    <Polyline
+                      positions={trip.routeCoordinates}
+                      pathOptions={{
+                        color: "#42A5F5",
+                        weight: 5,
+                        opacity: 0.8,
+                      }}
+                    />
+                    <CircleMarker
+                      center={trip.origin}
+                      radius={7}
+                      pathOptions={{ color: "#4CAF50", fillColor: "#4CAF50", fillOpacity: 1 }}
+                    >
+                      <Popup><strong>Start</strong></Popup>
+                    </CircleMarker>
+                    <CircleMarker
+                      center={trip.dest}
+                      radius={7}
+                      pathOptions={{ color: "#EF5350", fillColor: "#EF5350", fillOpacity: 1 }}
+                    >
+                      <Popup><strong>{trip.destName || "Destination"}</strong></Popup>
+                    </CircleMarker>
+                  </>
                 )}
 
                 {location && (
@@ -864,6 +984,10 @@ function MapScreen() {
           })}
         </div>
       )}
+
+      {view === "map" && trip && (
+        <TripPanel />
+      )}
     </motion.div>
   );
 }
@@ -871,16 +995,19 @@ function MapScreen() {
 function MapBehavior({
   location,
   simActive,
+  fitBounds,
   onRecenterRef,
 }: {
   location: LocationData | null;
   simActive: boolean;
+  fitBounds: import("./store/useAppStore").FitBounds | null;
   onRecenterRef: React.MutableRefObject<() => void>;
 }) {
   const map = useMap();
   const hasPannedRef = useRef(false);
   const initialFixDoneRef = useRef(false);
   const prevSimActiveRef = useRef(simActive);
+  const prevFitKeyRef = useRef(0);
 
   useMapEvents({
     dragstart: () => { hasPannedRef.current = true; },
@@ -901,6 +1028,17 @@ function MapBehavior({
       initialFixDoneRef.current = true;
     }
   }, [location, map]);
+
+  useEffect(() => {
+    if (fitBounds && fitBounds.key !== prevFitKeyRef.current) {
+      prevFitKeyRef.current = fitBounds.key;
+      if (fitBounds.points.length >= 2) {
+        const bounds = L.latLngBounds(fitBounds.points);
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15, duration: 0.8 });
+        hasPannedRef.current = true;
+      }
+    }
+  }, [fitBounds, map]);
 
   useEffect(() => {
     onRecenterRef.current = () => {

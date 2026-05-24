@@ -11,29 +11,35 @@ import (
 	"location-sharing-backend/internal/auth"
 	"location-sharing-backend/internal/config"
 	appmw "location-sharing-backend/internal/middleware"
+	"location-sharing-backend/internal/services/geocoding"
+	"location-sharing-backend/internal/services/routing"
 	ws "location-sharing-backend/internal/websocket"
 	"location-sharing-backend/pkg/apierr"
 )
 
 // Handler holds dependencies for HTTP handlers.
 type Handler struct {
-	hub      *ws.Hub
-	cfg      *config.Config
-	tm       *auth.TokenManager
-	upgrader websocket.Upgrader
+	hub       *ws.Hub
+	cfg       *config.Config
+	tm        *auth.TokenManager
+	upgrader  websocket.Upgrader
+	routeH    *routing.Handler
+	geoH      *geocoding.Handler
 }
 
 // NewHandler creates a Handler with a configured WebSocket upgrader.
-func NewHandler(hub *ws.Hub, cfg *config.Config) *Handler {
+func NewHandler(hub *ws.Hub, cfg *config.Config, router routing.Router, geocoder geocoding.Geocoder) *Handler {
 	allowed := make(map[string]bool, len(cfg.AllowedOrigins))
 	for _, o := range cfg.AllowedOrigins {
 		allowed[o] = true
 	}
 
 	return &Handler{
-		hub: hub,
-		cfg: cfg,
-		tm:  auth.NewTokenManager(cfg.JWTSecret),
+		hub:  hub,
+		cfg:  cfg,
+		tm:   auth.NewTokenManager(cfg.JWTSecret),
+		routeH: routing.NewHandler(router),
+		geoH:   geocoding.NewHandler(geocoder),
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
@@ -44,13 +50,13 @@ func NewHandler(hub *ws.Hub, cfg *config.Config) *Handler {
 	}
 }
 
-// Routes returns a chi.Router with all WebSocket and utility endpoints.
+// Routes returns a chi.Router with all endpoints.
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
 
 	// Global limiters
-	generalLimiter := appmw.NewIPRateLimiter(10, 20) // 10 req/s, 20 burst
-	loginLimiter := appmw.NewIPRateLimiter(1, 5)     // 1 login/s, 5 burst
+	generalLimiter := appmw.NewIPRateLimiter(10, 20)
+	loginLimiter := appmw.NewIPRateLimiter(1, 5)
 
 	r.Use(chimw.Logger)
 	r.Use(chimw.Recoverer)
@@ -60,6 +66,11 @@ func (h *Handler) Routes() chi.Router {
 	// Public routes
 	r.With(appmw.RateLimit(loginLimiter)).Post("/login", h.Login)
 	r.Get("/health", h.Health)
+
+	// API routes
+	r.Get("/api/search", h.geoH.Search)
+	r.Get("/api/route", h.routeH.GetRoute)
+	r.Get("/api/trip/{groupID}", h.GetActiveTrip)
 
 	// Protected WebSocket route
 	r.Group(func(r chi.Router) {

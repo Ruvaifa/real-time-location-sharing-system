@@ -814,3 +814,348 @@ h4,
   font-size: 11px;
   color: #9ca3af;
 }
+
+/* Destination Search */
+.dest-search-wrap {
+  position: absolute;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1200;
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  pointer-events: auto;
+}
+
+.dest-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(251, 244, 235, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 14px;
+  padding: 10px 14px;
+  box-shadow: 0 8px 20px rgba(24, 20, 17, 0.18);
+}
+
+.dest-search-icon {
+  color: var(--ink-soft);
+  flex-shrink: 0;
+}
+
+.dest-search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: 15px;
+  color: var(--ink);
+  outline: none;
+  font-family: "Manrope", sans-serif;
+}
+
+.dest-search-input::placeholder {
+  color: var(--ink-soft);
+}
+
+.dest-search-clear {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-soft);
+  padding: 2px;
+  display: flex;
+}
+
+.dest-search-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--outline);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.dest-search-results {
+  margin-top: 6px;
+  background: rgba(251, 244, 235, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 12px;
+  box-shadow: 0 8px 20px rgba(24, 20, 17, 0.18);
+  overflow: hidden;
+}
+
+.dest-search-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--outline);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.dest-search-item:last-child {
+  border-bottom: none;
+}
+
+.dest-search-item:hover {
+  background: rgba(239, 108, 77, 0.08);
+}
+
+.dest-item-icon {
+  color: var(--accent);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.dest-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.dest-item-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.dest-item-addr {
+  font-size: 11px;
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dest-route-preview {
+  margin-top: 6px;
+  background: rgba(251, 244, 235, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 12px;
+  padding: 12px 14px;
+  box-shadow: 0 8px 20px rgba(24, 20, 17, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dest-route-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.dest-route-sep {
+  color: var(--ink-soft);
+}
+
+.dest-start-btn {
+  background: linear-gradient(120deg, #42A5F5, #1E88E5);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+
+.dest-start-btn:hover {
+  transform: translateY(-1px);
+}
+
+/* Trip Panel */
+.trip-panel {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  width: 330px;
+  background: rgba(30, 30, 30, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(51, 51, 51, 0.8);
+  border-radius: 20px;
+  padding: 16px;
+  z-index: 1000;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+  color: #fff;
+}
+
+.trip-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.trip-panel-title {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.trip-panel-dest {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.trip-panel-status {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.trip-panel-close {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #9ca3af;
+  transition: background 0.15s;
+}
+
+.trip-panel-close:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+.trip-panel-stats {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.trip-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.trip-stat-label {
+  font-size: 10px;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.trip-stat-value {
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.trip-progress-bar {
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+
+.trip-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #42A5F5, #1E88E5);
+  border-radius: 2px;
+  transition: width 0.5s ease;
+}
+
+.trip-participants {
+  margin-bottom: 14px;
+}
+
+.trip-participants-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #9ca3af;
+  margin-bottom: 8px;
+}
+
+.trip-rider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.trip-rider-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.trip-rider-name {
+  font-size: 13px;
+  color: #e0e0e0;
+}
+
+.trip-start-btn {
+  width: 100%;
+  padding: 12px;
+  background: linear-gradient(120deg, #42A5F5, #1E88E5);
+  border: none;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+
+.trip-start-btn:hover {
+  transform: translateY(-1px);
+}
+
+.trip-end-btn {
+  width: 100%;
+  padding: 12px;
+  background: rgba(239, 83, 80, 0.2);
+  border: 1px solid rgba(239, 83, 80, 0.4);
+  border-radius: 10px;
+  color: #EF5350;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.trip-end-btn:hover {
+  background: rgba(239, 83, 80, 0.3);
+}
+
+@media (max-width: 860px) {
+  .trip-panel {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    width: auto;
+  }
+
+  .dest-search-wrap {
+    width: calc(100vw - 32px);
+  }
+}
