@@ -1,4 +1,5 @@
 # --- Environment and Secrets ---
+.env.example
 .env
 .env.local
 .env.*.local
