@@ -12,6 +12,9 @@ import (
 
 	"location-sharing-backend/internal/config"
 	"location-sharing-backend/internal/handler"
+	"location-sharing-backend/internal/services/cache"
+	"location-sharing-backend/internal/services/geocoding"
+	"location-sharing-backend/internal/services/routing"
 	"location-sharing-backend/internal/storage"
 	"location-sharing-backend/internal/websocket"
 )
@@ -27,6 +30,17 @@ func main() {
 	}
 	defer store.Close()
 
+	// 1c. Initialize external services with caching
+	routingCache := cache.New[*routing.RouteResult](
+		time.Duration(cfg.RoutingCacheTTL)*time.Minute, 1000,
+	)
+	router := routing.NewOSRMRouter(cfg.OSRMBaseURL, routingCache)
+
+	geocodingCache := cache.New[[]geocoding.SearchResult](
+		time.Duration(cfg.GeocodingCacheTTL)*time.Minute, 500,
+	)
+	geocoder := geocoding.NewNominatimGeocoder(cfg.NominatimBaseURL, geocodingCache)
+
 	// 2. Initialize the WebSocket Hub
 	hub := websocket.NewHub(cfg.MaxGroupSize, cfg.MaxMsgRate, store)
 	go hub.Run()
@@ -37,13 +51,13 @@ func main() {
 	go storage.StartLocationPruner(prunerCtx, store, cfg.LocationRetentionDays, 12*time.Hour)
 
 	// 3. Initialize Handlers
-	h := handler.NewHandler(hub, cfg)
-	router := h.Routes()
+	h := handler.NewHandler(hub, cfg, router, geocoder)
+	routerChi := h.Routes()
 
 	// 4. Configure HTTP Server
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,
-		Handler:      router,
+		Handler:      routerChi,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,

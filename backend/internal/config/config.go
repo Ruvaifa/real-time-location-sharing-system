@@ -22,6 +22,11 @@ type Config struct {
 	DBName                string
 	DBSSLMode             string
 	LocationRetentionDays int
+
+	OSRMBaseURL       string
+	NominatimBaseURL  string
+	RoutingCacheTTL   int // minutes
+	GeocodingCacheTTL int // minutes
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -42,6 +47,11 @@ func Load() *Config {
 		DBName:                envOrDefault("DB_NAME", "location_share"),
 		DBSSLMode:             envOrDefault("DB_SSLMODE", "disable"),
 		LocationRetentionDays: envOrDefaultInt("LOCATION_RETENTION_DAYS", 7),
+
+		OSRMBaseURL:       envOrDefault("OSRM_BASE_URL", "https://router.project-osrm.org"),
+		NominatimBaseURL:  envOrDefault("NOMINATIM_BASE_URL", "https://nominatim.openstreetmap.org"),
+		RoutingCacheTTL:   envOrDefaultInt("ROUTING_CACHE_TTL", 1440),
+		GeocodingCacheTTL: envOrDefaultInt("GEOCODING_CACHE_TTL", 60),
 	}
 
 	// Clean origins

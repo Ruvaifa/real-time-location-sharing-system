@@ -12,6 +12,12 @@ type Store interface {
 	UpsertUser(ctx context.Context, userID, name string) error
 	InsertLocation(ctx context.Context, loc model.LocationMessage) error
 	PruneLocations(ctx context.Context, retentionDays int) (int64, error)
+
+	CreateTrip(ctx context.Context, trip *model.Trip) error
+	GetActiveTripByGroup(ctx context.Context, groupID string) (*model.Trip, error)
+	UpdateTripStatus(ctx context.Context, tripID, status string) error
+	UpdateTripParticipants(ctx context.Context, tripID string, participants []string) error
+
 	Close() error
 }
 

@@ -128,25 +128,4 @@ If running locally without Docker, you'll also need Postgres and the migrations 
 - **Rate Limiting**: Each client is rate-limited to prevent abuse (configurable via `MAX_MSG_RATE`).
 - **Input Validation**: Coordinates are bounds-checked, names are length-capped, and NaN/Inf values are rejected before broadcast.
 
-## Environment Variables
 
-| Variable | Default | Description |
-|---|---|---|
-| `PORT` | `8080` | Backend listen port |
-| `ALLOWED_ORIGINS` | `http://localhost:5173` | Comma-separated CORS/WebSocket origin whitelist |
-| `APP_ENV` | `development` | Runtime environment |
-| `MAX_GROUP_SIZE` | `64` | Max clients per group |
-| `MAX_MSG_RATE` | `10` | Max messages per second per client |
-| `VITE_WS_HOST` | `localhost:8080` | WebSocket host for the frontend |
-| `VITE_BACKEND_HTTP` | `http://localhost:8080` | HTTP base URL used by Vite proxy |
-| `DB_HOST` | `localhost` | Postgres host |
-| `DB_PORT` | `5432` | Postgres port |
-| `DB_USER` | `app` | Postgres username |
-| `DB_PASSWORD` | `app123` | Postgres password |
-| `DB_NAME` | `location_share` | Postgres database name |
-| `DB_SSLMODE` | `disable` | Postgres SSL mode |
-| `LOCATION_RETENTION_DAYS` | `7` | Days to retain location history |
-
-## License
-
-MIT

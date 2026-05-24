@@ -15,7 +15,10 @@ import {
   MapRoute,
   useMap,
 } from "./components/ui/map";
-import { LocationData, Route as RouteType, useAppStore } from "./store/useAppStore";
+import { DestinationSearch } from "./components/DestinationSearch";
+import { TripPanel } from "./components/TripPanel";
+import { LocationData, Route as RouteType, useAppStore, sendWsMessage } from "./store/useAppStore";
+import { fetchActiveTrip, parseRouteCoordinates } from "./lib/trip";
 
 function buildWsUrl(groupId: string, token: string): string {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -23,7 +26,7 @@ function buildWsUrl(groupId: string, token: string): string {
   return `${protocol}//${host}/ws/${groupId}?token=${token}`;
 }
 
-function calculateDistance(
+export function calculateDistance(
   lat1: number,
   lon1: number,
   lat2: number,
@@ -489,6 +492,13 @@ function MapScreen() {
   const startSim = useAppStore((state) => state.startSim);
   const stopSim = useAppStore((state) => state.stopSim);
   const setSimProgress = useAppStore((state) => state.setSimProgress);
+  const trip = useAppStore((state) => state.trip);
+  const setTrip = useAppStore((state) => state.setTrip);
+  const updateTripParticipants = useAppStore((state) => state.updateTripParticipants);
+  const setTripStatus = useAppStore((state) => state.setTripStatus);
+  const setWs = useAppStore((state) => state.setWs);
+  const fitBounds = useAppStore((state) => state.fitBounds);
+  const requestFitBounds = useAppStore((state) => state.requestFitBounds);
 
   const ws = useRef<WebSocket | null>(null);
   const [, setTick] = useState(0);
@@ -580,7 +590,7 @@ function MapScreen() {
         setLocation(newLoc);
 
         if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-          ws.current.send(JSON.stringify(newLoc));
+          ws.current.send(JSON.stringify({ type: "location", payload: newLoc }));
         }
       },
       (error) => {
@@ -666,7 +676,7 @@ function MapScreen() {
       setLocation(newLoc);
 
       if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-        ws.current.send(JSON.stringify(newLoc));
+        ws.current.send(JSON.stringify({ type: "location", payload: newLoc }));
       }
     }, TICK_INTERVAL_MS);
 
@@ -694,23 +704,101 @@ function MapScreen() {
       setWsStatus("connecting");
       const socket = new WebSocket(buildWsUrl(groupId, token));
       ws.current = socket;
+      setWs(socket);
 
       socket.onopen = () => {
         if (!isMounted) return;
         setWsStatus("connected");
         reconnectAttempt.current = 0;
+
+        fetchActiveTrip(groupId).then((tripData) => {
+          if (!isMounted || !tripData) return;
+          const currentTrip = useAppStore.getState().trip;
+          if (currentTrip) return;
+          const decoded: import("./store/useAppStore").TripData = {
+            id: tripData.id,
+            creatorID: tripData.creatorID,
+            creatorName: tripData.creatorName,
+            origin: [tripData.originLat, tripData.originLng],
+            originName: tripData.originName,
+            dest: [tripData.destLat, tripData.destLng],
+            destName: tripData.destName,
+            routeCoordinates: tripData.routeGeometry
+              ? parseRouteCoordinates(tripData.routeGeometry)
+              : [],
+            distanceMeters: tripData.distanceMeters,
+            durationSeconds: tripData.durationSeconds,
+            status: tripData.status as import("./store/useAppStore").TripData["status"],
+            participants: tripData.participants || [],
+            startedAt: tripData.startedAt || null,
+          };
+          setTrip(decoded);
+          requestFitBounds([decoded.origin, decoded.dest]);
+          if (tripData.creatorID !== username) {
+            sendWsMessage("trip_join");
+          }
+        }).catch(() => {});
       };
 
       socket.onmessage = (event) => {
         if (!isMounted) return;
         try {
-          const data: LocationData = JSON.parse(event.data);
-          if ((data as any).offline) {
-            removePeer(data.userID);
-            return;
-          }
-          if (data.userID !== username) {
-            upsertPeer(data);
+          const msg = JSON.parse(event.data);
+          const type = msg.type || "location";
+          const data = msg.payload || msg;
+          console.log("[WS RECV]", type, data);
+
+          switch (type) {
+            case "location":
+              if (data.offline) {
+                removePeer(data.userID);
+              } else if (data.userID !== username) {
+                upsertPeer(data);
+              }
+              break;
+            case "trip_created": {
+              const tripData: import("./store/useAppStore").TripData = {
+                id: data.id,
+                creatorID: data.creatorID,
+                creatorName: data.creatorName,
+                origin: [data.originLat, data.originLng],
+                originName: data.originName,
+                dest: [data.destLat, data.destLng],
+                destName: data.destName,
+                routeCoordinates: parseRouteCoordinates(data.routeGeometry || ""),
+                distanceMeters: data.distanceMeters,
+                durationSeconds: data.durationSeconds,
+                status: data.status,
+                participants: data.participants || [],
+                startedAt: data.startedAt || null,
+              };
+              setTrip(tripData);
+              requestFitBounds([tripData.origin, tripData.dest]);
+              if (data.creatorID !== username) {
+                sendWsMessage("trip_join");
+              }
+              break;
+            }
+            case "trip_joined":
+              if (data.participants) {
+                const prev = useAppStore.getState().trip;
+                if (prev) setTrip({ ...prev, participants: data.participants });
+              }
+              break;
+            case "trip_left":
+              if (data.participants) {
+                const prev = useAppStore.getState().trip;
+                if (prev) setTrip({ ...prev, participants: data.participants });
+              }
+              break;
+            case "trip_started": {
+              const prev = useAppStore.getState().trip;
+              if (prev) setTrip({ ...prev, status: "active", startedAt: data.startedAt || prev.startedAt });
+              break;
+            }
+            case "trip_ended":
+              setTrip(null);
+              break;
           }
         } catch (err) {
           console.error("Failed to parse websocket message", err);
@@ -732,8 +820,9 @@ function MapScreen() {
       isMounted = false;
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
       ws.current?.close();
+      setWs(null);
     };
-  }, [groupId, username, upsertPeer, removePeer]);
+  }, [groupId, username, upsertPeer, removePeer, setTrip, updateTripParticipants, setTripStatus, setWs]);
 
   // Tick timer for "time ago" updates
   useEffect(() => {
@@ -882,6 +971,8 @@ function MapScreen() {
               </div>
             </div>
           </div>
+
+          <DestinationSearch />
         </>
       )}
 
@@ -931,6 +1022,7 @@ function MapScreen() {
                   hasPannedRef={hasPannedRef}
                   initialFixDoneRef={initialFixDoneRef}
                   mapRef={mapRef}
+                  fitBounds={fitBounds}
                 />
 
                 {sim.active && routeCoordinates.length >= 2 && (
@@ -954,6 +1046,37 @@ function MapScreen() {
                         interactive={false}
                       />
                     )}
+                  </>
+                )}
+
+                {trip && trip.routeCoordinates.length > 0 && (
+                  <>
+                    <MapRoute
+                      id="trip-route"
+                      coordinates={trip.routeCoordinates.map(([lat, lng]) => [lng, lat] as [number, number])}
+                      color="#42A5F5"
+                      width={5}
+                      opacity={0.8}
+                      interactive={false}
+                    />
+                    <MapMarker
+                      longitude={trip.origin[1]}
+                      latitude={trip.origin[0]}
+                      anchor="center"
+                    >
+                      <MarkerContent>
+                        <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#4CAF50", border: "2px solid #fff", boxShadow: "0 2px 6px rgba(0,0,0,0.3)" }} />
+                      </MarkerContent>
+                    </MapMarker>
+                    <MapMarker
+                      longitude={trip.dest[1]}
+                      latitude={trip.dest[0]}
+                      anchor="center"
+                    >
+                      <MarkerContent>
+                        <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#EF5350", border: "2px solid #fff", boxShadow: "0 2px 6px rgba(0,0,0,0.3)" }} />
+                      </MarkerContent>
+                    </MapMarker>
                   </>
                 )}
 
@@ -1130,6 +1253,10 @@ function MapScreen() {
           })}
         </div>
       )}
+
+      {view === "map" && trip && (
+        <TripPanel />
+      )}
     </motion.div>
   );
 }
@@ -1140,14 +1267,17 @@ function MapBehaviorOnMount({
   hasPannedRef,
   initialFixDoneRef,
   mapRef,
+  fitBounds,
 }: {
   location: LocationData | null;
   simActive: boolean;
   hasPannedRef: React.MutableRefObject<boolean>;
   initialFixDoneRef: React.MutableRefObject<boolean>;
   mapRef: React.MutableRefObject<Maplibregl.Map | null>;
+  fitBounds: import("./store/useAppStore").FitBounds | null;
 }) {
   const { map } = useMap();
+  const prevFitKeyRef = useRef(0);
 
   useEffect(() => {
     if (!map) return;
@@ -1178,6 +1308,18 @@ function MapBehaviorOnMount({
       mapRef.current = map;
     }
   }, [map, mapRef]);
+
+  useEffect(() => {
+    if (fitBounds && fitBounds.key !== prevFitKeyRef.current && map) {
+      prevFitKeyRef.current = fitBounds.key;
+      if (fitBounds.points.length >= 2) {
+        const bounds = new Maplibregl.LngLatBounds();
+        fitBounds.points.forEach((p) => bounds.extend([p[1], p[0]]));
+        map.fitBounds(bounds, { padding: 50, maxZoom: 15, duration: 800 });
+        hasPannedRef.current = true;
+      }
+    }
+  }, [fitBounds, map, hasPannedRef]);
 
   return null;
 }
