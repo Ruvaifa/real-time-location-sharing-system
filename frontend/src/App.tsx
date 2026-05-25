@@ -7,7 +7,7 @@ import "./styles.css";
 import { NavItem } from "./components/ui/bottom-nav-bar";
 import { GlobeAnalytics } from "./components/ui/cobe-globe-analytics";
 import {
-  Map,
+  Map as MapView,
   MapControls,
   MapMarker,
   MarkerContent,
@@ -18,6 +18,7 @@ import {
 import { DestinationSearch } from "./components/DestinationSearch";
 import { TripPanel } from "./components/TripPanel";
 import { LocationData, Route as RouteType, useAppStore, sendWsMessage } from "./store/useAppStore";
+import { getRoute } from "./lib/routing";
 import { fetchActiveTrip, parseRouteCoordinates } from "./lib/trip";
 
 function buildWsUrl(groupId: string, token: string): string {
@@ -50,13 +51,14 @@ export function calculateDistance(
 }
 
 const COLORS = [
-  "oklch(0.72 0.19 230)",
-  "oklch(0.72 0.19 160)",
-  "oklch(0.74 0.2 85)",
-  "oklch(0.7 0.21 35)",
-  "oklch(0.72 0.18 20)",
+  "#4F8BFF",
+  "#35D1A1",
+  "#FFB300",
+  "#FF7A00",
+  "#FF5C5C",
 ];
 const SELF_COLOR = "var(--accent)";
+const SELF_ROUTE_COLOR = "#FF7A00";
 const ROUTE_COLOR = "rgb(252 76 2)";
 const MAP_STYLES = {
   dark: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
@@ -146,6 +148,7 @@ const CYCLING_SPEED_KMH = 20;
 const TICK_INTERVAL_MS = 1000;
 const ROUTE_SERVICE_URL = "https://router.project-osrm.org/route/v1/driving";
 const ROUTE_FETCH_TIMEOUT_MS = 5000;
+const PARTICIPANT_ROUTE_THROTTLE_MS = 8000;
 
 type LineCoordinate = [number, number];
 
@@ -510,10 +513,15 @@ function MapScreen() {
   const [routePathStatus, setRoutePathStatus] = useState<
     "idle" | "loading" | "ready" | "error"
   >("idle");
+  const [participantRoutes, setParticipantRoutes] = useState<Record<string, LineCoordinate[]>>({});
   const [wsStatus, setWsStatus] = useState<"connecting" | "connected" | "disconnected">("connecting");
   const mapRef = useRef<Maplibregl.Map | null>(null);
   const hasPannedRef = useRef(false);
   const initialFixDoneRef = useRef(false);
+  const participantRoutesRef = useRef<Record<string, LineCoordinate[]>>({});
+  const participantRouteStateRef = useRef<
+    Record<string, { key: string; inFlight: boolean; lastFetch: number }>
+  >({});
 
   const peerEntries = useMemo(() => Object.entries(peers), [peers]);
   const mapStyleItems: NavItem[] = useMemo(
@@ -641,6 +649,120 @@ function MapScreen() {
     if (!sim.active || routeLine.length < 2) return [];
     return routeLine;
   }, [sim.active, routeLine]);
+
+  const participantLocations = useMemo(() => {
+    if (!trip) return [] as Array<{
+      id: string;
+      name: string;
+      color: string;
+      lat: number;
+      lng: number;
+      timestamp: number;
+    }>;
+
+    const ids = new Set(trip.participants);
+    ids.add(username);
+
+    const next: Array<{
+      id: string;
+      name: string;
+      color: string;
+      lat: number;
+      lng: number;
+      timestamp: number;
+    }> = [];
+
+    ids.forEach((id) => {
+      if (id === username) {
+        if (!location) return;
+        next.push({
+          id,
+          name: username,
+          color: SELF_ROUTE_COLOR,
+          lat: location.lat,
+          lng: location.lng,
+          timestamp: location.timestamp,
+        });
+        return;
+      }
+
+      const peer = peers[id];
+      if (!peer) return;
+      if (Date.now() - peer.timestamp > 60000) return;
+      next.push({
+        id,
+        name: peer.name,
+        color: getHashColor(peer.name),
+        lat: peer.lat,
+        lng: peer.lng,
+        timestamp: peer.timestamp,
+      });
+    });
+
+    return next;
+  }, [trip, username, location, peers]);
+
+  useEffect(() => {
+    participantRoutesRef.current = participantRoutes;
+  }, [participantRoutes]);
+
+  useEffect(() => {
+    if (!trip) {
+      setParticipantRoutes({});
+      participantRouteStateRef.current = {};
+      return;
+    }
+
+    const dest = trip.dest;
+    const now = Date.now();
+    const activeIds = new Set(participantLocations.map((p) => p.id));
+
+    setParticipantRoutes((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach((id) => {
+        if (!activeIds.has(id)) delete next[id];
+      });
+      return next;
+    });
+
+    Object.keys(participantRouteStateRef.current).forEach((id) => {
+      if (!activeIds.has(id)) delete participantRouteStateRef.current[id];
+    });
+
+    participantLocations.forEach((p) => {
+      const key = `${p.lat.toFixed(5)},${p.lng.toFixed(5)}|${dest[0].toFixed(5)},${dest[1].toFixed(5)}`;
+      const state = participantRouteStateRef.current[p.id] ?? {
+        key: "",
+        inFlight: false,
+        lastFetch: 0,
+      };
+      const existing = participantRoutesRef.current[p.id];
+
+      if (state.inFlight) return;
+      if (state.key === key && existing?.length) return;
+      if (now - state.lastFetch < PARTICIPANT_ROUTE_THROTTLE_MS && state.key === key) return;
+
+      state.inFlight = true;
+      state.key = key;
+      participantRouteStateRef.current[p.id] = state;
+
+      getRoute([p.lat, p.lng], dest)
+        .then((res) => {
+          const coordinates = res.coordinates.map(
+            ([lat, lng]) => [lng, lat] as LineCoordinate
+          );
+          setParticipantRoutes((prev) => ({ ...prev, [p.id]: coordinates }));
+        })
+        .catch(() => {})
+        .finally(() => {
+          const current = participantRouteStateRef.current[p.id];
+          if (current) {
+            current.inFlight = false;
+            current.lastFetch = Date.now();
+          }
+        });
+    });
+  }, [trip, participantLocations]);
 
   // Simulation tick
   useEffect(() => {
@@ -781,7 +903,7 @@ function MapScreen() {
                 upsertPeer(data);
               }
               break;
-            case "trip_created": {
+            case "trip_create": {
               const tripData: import("./store/useAppStore").TripData = {
                 id: data.id,
                 creatorID: data.creatorID,
@@ -805,13 +927,13 @@ function MapScreen() {
               }
               break;
             }
-            case "trip_joined":
+            case "trip_join":
               if (data.participants) {
                 const prev = useAppStore.getState().trip;
                 if (prev) setTrip({ ...prev, participants: data.participants });
               }
               break;
-            case "trip_left":
+            case "trip_leave":
               if (data.participants) {
                 const prev = useAppStore.getState().trip;
                 if (prev) setTrip({ ...prev, participants: data.participants });
@@ -822,7 +944,7 @@ function MapScreen() {
               if (prev) setTrip({ ...prev, status: "active", startedAt: data.startedAt || prev.startedAt });
               break;
             }
-            case "trip_ended":
+            case "trip_end":
               setTrip(null);
               break;
           }
@@ -1032,7 +1154,7 @@ function MapScreen() {
               transition={{ duration: 0.7 }}
               style={{ width: "100%", height: "100%" }}
             >
-              <Map
+              <MapView
                 center={[77.2090, 28.6139]}
                 zoom={13}
                 theme={mapStyle === "dark" ? "dark" : "light"}
@@ -1109,6 +1231,22 @@ function MapScreen() {
                     </MapMarker>
                   </>
                 )}
+
+                {trip && participantLocations.map((participant) => {
+                  const coordinates = participantRoutes[participant.id];
+                  if (!coordinates || coordinates.length < 2) return null;
+                  return (
+                    <MapRoute
+                      key={`participant-route-${participant.id}`}
+                      id={`participant-route-${participant.id}`}
+                      coordinates={coordinates}
+                      color={participant.color}
+                      width={3}
+                      opacity={0.55}
+                      interactive={false}
+                    />
+                  );
+                })}
 
                 {trip && trip.routeCoordinates.length > 0 && (
                   <>
@@ -1256,7 +1394,7 @@ function MapScreen() {
                     </MapMarker>
                   );
                 })}
-              </Map>
+              </MapView>
             </motion.div>
           )}
         </AnimatePresence>
