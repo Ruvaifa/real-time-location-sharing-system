@@ -497,8 +497,6 @@ function MapScreen() {
   const setSimProgress = useAppStore((state) => state.setSimProgress);
   const trip = useAppStore((state) => state.trip);
   const setTrip = useAppStore((state) => state.setTrip);
-  const updateTripParticipants = useAppStore((state) => state.updateTripParticipants);
-  const setTripStatus = useAppStore((state) => state.setTripStatus);
   const setWs = useAppStore((state) => state.setWs);
   const fitBounds = useAppStore((state) => state.fitBounds);
   const requestFitBounds = useAppStore((state) => state.requestFitBounds);
@@ -514,6 +512,7 @@ function MapScreen() {
     "idle" | "loading" | "ready" | "error"
   >("idle");
   const [participantRoutes, setParticipantRoutes] = useState<Record<string, LineCoordinate[]>>({});
+  const [hiddenParticipantRouteIds, setHiddenParticipantRouteIds] = useState<Set<string>>(new Set());
   const [wsStatus, setWsStatus] = useState<"connecting" | "connected" | "disconnected">("connecting");
   const mapRef = useRef<Maplibregl.Map | null>(null);
   const hasPannedRef = useRef(false);
@@ -532,8 +531,6 @@ function MapScreen() {
     ],
     []
   );
-  const activeStyleIndex = MAP_STYLE_ORDER.indexOf(mapStyle);
-
   const toggleSimulate = useCallback(
     (route: RouteType) => {
       if (sim.active) {
@@ -702,6 +699,11 @@ function MapScreen() {
     return next;
   }, [trip, username, location, peers]);
 
+  const participantRouteLocations = useMemo(() => {
+    if (!trip) return [] as typeof participantLocations;
+    return participantLocations.filter((participant) => participant.id !== trip.creatorID);
+  }, [participantLocations, trip]);
+
   useEffect(() => {
     participantRoutesRef.current = participantRoutes;
   }, [participantRoutes]);
@@ -715,7 +717,7 @@ function MapScreen() {
 
     const dest = trip.dest;
     const now = Date.now();
-    const activeIds = new Set(participantLocations.map((p) => p.id));
+    const activeIds = new Set(participantRouteLocations.map((p) => p.id));
 
     setParticipantRoutes((prev) => {
       const next = { ...prev };
@@ -729,7 +731,7 @@ function MapScreen() {
       if (!activeIds.has(id)) delete participantRouteStateRef.current[id];
     });
 
-    participantLocations.forEach((p) => {
+    participantRouteLocations.forEach((p) => {
       const key = `${p.lat.toFixed(5)},${p.lng.toFixed(5)}|${dest[0].toFixed(5)},${dest[1].toFixed(5)}`;
       const state = participantRouteStateRef.current[p.id] ?? {
         key: "",
@@ -1232,9 +1234,10 @@ function MapScreen() {
                   </>
                 )}
 
-                {trip && participantLocations.map((participant) => {
+                {trip && participantRouteLocations.map((participant) => {
                   const coordinates = participantRoutes[participant.id];
                   if (!coordinates || coordinates.length < 2) return null;
+                  if (hiddenParticipantRouteIds.has(participant.id)) return null;
                   return (
                     <MapRoute
                       key={`participant-route-${participant.id}`}
@@ -1399,6 +1402,87 @@ function MapScreen() {
           )}
         </AnimatePresence>
       </div>
+
+      {view === "map" && trip && (
+        <div
+          style={{
+            position: "absolute",
+            top: 90,
+            left: 16,
+            zIndex: 3,
+            background: "rgba(10, 14, 18, 0.7)",
+            border: "1px solid rgba(255, 255, 255, 0.08)",
+            borderRadius: 12,
+            padding: "10px 12px",
+            backdropFilter: "blur(6px)",
+            color: "#E8EEF6",
+            fontSize: 12,
+          }}
+        >
+          {(() => {
+            const allSelected = hiddenParticipantRouteIds.size === 0;
+            return (
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setHiddenParticipantRouteIds(new Set());
+                    } else {
+                      setHiddenParticipantRouteIds(new Set(participantRouteLocations.map((p) => p.id)));
+                    }
+                  }}
+                  style={{ accentColor: "#42A5F5" }}
+                />
+                <span>All participant routes</span>
+              </label>
+            );
+          })()}
+
+          {participantRouteLocations.length > 0 && (
+            <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
+              {participantRouteLocations.map((participant) => {
+                const isVisible = !hiddenParticipantRouteIds.has(participant.id);
+                return (
+                  <label
+                    key={`legend-${participant.id}`}
+                    style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isVisible}
+                      onChange={(e) => {
+                        setHiddenParticipantRouteIds((prev) => {
+                          const next = new Set(prev);
+                          if (e.target.checked) {
+                            next.delete(participant.id);
+                          } else {
+                            next.add(participant.id);
+                          }
+                          return next;
+                        });
+                      }}
+                      style={{ accentColor: participant.color }}
+                    />
+                    <span
+                      style={{
+                        width: 12,
+                        height: 12,
+                        borderRadius: 999,
+                        background: participant.color,
+                        boxShadow: "0 0 0 2px rgba(255, 255, 255, 0.12)",
+                        flex: "0 0 auto",
+                      }}
+                    />
+                    <span style={{ opacity: 0.9 }}>{participant.name}</span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {view === "map" && (
         <div className="users-panel">
