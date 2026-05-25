@@ -148,7 +148,8 @@ const CYCLING_SPEED_KMH = 20;
 const TICK_INTERVAL_MS = 1000;
 const ROUTE_SERVICE_URL = "https://router.project-osrm.org/route/v1/driving";
 const ROUTE_FETCH_TIMEOUT_MS = 5000;
-const PARTICIPANT_ROUTE_THROTTLE_MS = 8000;
+const ROUTE_FETCH_MIN_DISTANCE_METERS = 50;
+const ROUTE_FETCH_MIN_INTERVAL_MS = 5000;
 
 type LineCoordinate = [number, number];
 
@@ -519,7 +520,12 @@ function MapScreen() {
   const initialFixDoneRef = useRef(false);
   const participantRoutesRef = useRef<Record<string, LineCoordinate[]>>({});
   const participantRouteStateRef = useRef<
-    Record<string, { key: string; inFlight: boolean; lastFetch: number }>
+    Record<string, {
+      inFlight: boolean;
+      lastFetchTime: number;
+      lastFetchOrigin: { lat: number; lng: number } | null;
+      lastDestKey: string;
+    }>
   >({});
 
   const peerEntries = useMemo(() => Object.entries(peers), [peers]);
@@ -717,6 +723,7 @@ function MapScreen() {
 
     const dest = trip.dest;
     const now = Date.now();
+    const destKey = `${dest[0].toFixed(5)},${dest[1].toFixed(5)}`;
     const activeIds = new Set(participantRouteLocations.map((p) => p.id));
 
     setParticipantRoutes((prev) => {
@@ -732,20 +739,34 @@ function MapScreen() {
     });
 
     participantRouteLocations.forEach((p) => {
-      const key = `${p.lat.toFixed(5)},${p.lng.toFixed(5)}|${dest[0].toFixed(5)},${dest[1].toFixed(5)}`;
       const state = participantRouteStateRef.current[p.id] ?? {
-        key: "",
         inFlight: false,
-        lastFetch: 0,
+        lastFetchTime: 0,
+        lastFetchOrigin: null,
+        lastDestKey: "",
       };
-      const existing = participantRoutesRef.current[p.id];
+
+      if (state.lastDestKey !== destKey) {
+        state.lastDestKey = destKey;
+        state.lastFetchOrigin = null;
+        state.lastFetchTime = 0;
+      }
 
       if (state.inFlight) return;
-      if (state.key === key && existing?.length) return;
-      if (now - state.lastFetch < PARTICIPANT_ROUTE_THROTTLE_MS && state.key === key) return;
+      if (now - state.lastFetchTime < ROUTE_FETCH_MIN_INTERVAL_MS) return;
+
+      const movedMeters = state.lastFetchOrigin
+        ? calculateDistance(
+            state.lastFetchOrigin.lat,
+            state.lastFetchOrigin.lng,
+            p.lat,
+            p.lng
+          )
+        : Infinity;
+
+      if (movedMeters < ROUTE_FETCH_MIN_DISTANCE_METERS) return;
 
       state.inFlight = true;
-      state.key = key;
       participantRouteStateRef.current[p.id] = state;
 
       getRoute([p.lat, p.lng], dest)
@@ -754,17 +775,22 @@ function MapScreen() {
             ([lat, lng]) => [lng, lat] as LineCoordinate
           );
           setParticipantRoutes((prev) => ({ ...prev, [p.id]: coordinates }));
+          const current = participantRouteStateRef.current[p.id];
+          if (current) {
+            current.lastFetchOrigin = { lat: p.lat, lng: p.lng };
+            current.lastFetchTime = Date.now();
+            current.lastDestKey = destKey;
+          }
         })
         .catch(() => {})
         .finally(() => {
           const current = participantRouteStateRef.current[p.id];
           if (current) {
             current.inFlight = false;
-            current.lastFetch = Date.now();
           }
         });
     });
-  }, [trip, participantLocations]);
+  }, [trip, participantRouteLocations]);
 
   // Simulation tick
   useEffect(() => {
