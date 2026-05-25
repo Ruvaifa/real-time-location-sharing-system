@@ -13,7 +13,7 @@ const (
 	writeWait  = 10 * time.Second
 	pongWait   = 60 * time.Second
 	pingPeriod = (pongWait * 9) / 10
-	maxMsgSize = 16384
+	maxMsgSize = 512 * 1024
 )
 
 // Client is a middleman between a single WebSocket connection and the Hub.

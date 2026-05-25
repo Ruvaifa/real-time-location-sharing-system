@@ -8,18 +8,13 @@ export function DestinationSearch() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
-  const [routeInfo, setRouteInfo] = useState<{
-    distance: number;
-    duration: number;
-    dest: SearchResult;
-    coordinates: [number, number][];
-    geometry: string;
-  } | null>(null);
   const location = useAppStore((s) => s.location);
   const setTrip = useAppStore((s) => s.setTrip);
   const trip = useAppStore((s) => s.trip);
   const username = useAppStore((s) => s.username);
   const requestFitBounds = useAppStore((s) => s.requestFitBounds);
+  const routePreview = useAppStore((s) => s.routePreview);
+  const setRoutePreview = useAppStore((s) => s.setRoutePreview);
   const inputRef = useRef<HTMLInputElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
@@ -73,12 +68,13 @@ export function DestinationSearch() {
         [location.lat, location.lng],
         [result.lat, result.lng]
       );
-      setRouteInfo({
+      setRoutePreview({
+        origin: [location.lat, location.lng],
+        dest: [result.lat, result.lng],
+        coordinates: route.coordinates,
         distance: route.distance,
         duration: route.duration,
-        dest: result,
-        coordinates: route.coordinates,
-        geometry: route.geometry,
+        destName: result.displayName,
       });
       requestFitBounds([
         [location.lat, location.lng],
@@ -91,50 +87,51 @@ export function DestinationSearch() {
     }
   };
 
-  const handleStartTrip = () => {
-    if (!routeInfo || !location) return;
+  const handleStartNavigation = () => {
+    if (!routePreview || !location) return;
 
     const tripId = `trip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const tripData = {
       id: tripId,
       creatorID: username,
       creatorName: username,
-      origin: [location.lat, location.lng] as [number, number],
+      origin: routePreview.origin,
       originName: "My location",
-      dest: [routeInfo.dest.lat, routeInfo.dest.lng] as [number, number],
-      destName: routeInfo.dest.displayName,
-      routeCoordinates: routeInfo.coordinates,
-      distanceMeters: routeInfo.distance,
-      durationSeconds: routeInfo.duration,
-      status: "planning" as const,
+      dest: routePreview.dest,
+      destName: routePreview.destName,
+      routeCoordinates: routePreview.coordinates,
+      distanceMeters: routePreview.distance,
+      durationSeconds: routePreview.duration,
+      status: "active" as const,
       participants: [username],
-      startedAt: null,
+      startedAt: Date.now(),
     };
 
     setTrip(tripData);
-    requestFitBounds([tripData.origin, tripData.dest]);
+    setRoutePreview(null);
 
     sendWsMessage("trip_create", {
       id: tripId,
       originLat: location.lat,
       originLng: location.lng,
       originName: "My location",
-      destLat: routeInfo.dest.lat,
-      destLng: routeInfo.dest.lng,
-      destName: routeInfo.dest.displayName,
-      routeGeometry: JSON.stringify(routeInfo.coordinates),
-      distanceMeters: routeInfo.distance,
-      durationSeconds: routeInfo.duration,
+      destLat: routePreview.dest[0],
+      destLng: routePreview.dest[1],
+      destName: routePreview.destName,
+      routeGeometry: JSON.stringify(routePreview.coordinates),
+      distanceMeters: routePreview.distance,
+      durationSeconds: routePreview.duration,
     });
 
+    sendWsMessage("trip_start");
+
     setQuery("");
-    setRouteInfo(null);
   };
 
   const handleClear = () => {
     setQuery("");
     setResults([]);
-    setRouteInfo(null);
+    setRoutePreview(null);
   };
 
   const formatDistance = (m: number) =>
@@ -160,7 +157,7 @@ export function DestinationSearch() {
           onChange={(e) => handleSearch(e.target.value)}
           className="dest-search-input"
         />
-        {(query || routeInfo) && (
+        {(query || routePreview) && (
           <button className="dest-search-clear" onClick={handleClear}>
             <X size={14} />
           </button>
@@ -186,15 +183,15 @@ export function DestinationSearch() {
         </div>
       )}
 
-      {routeInfo && (
+      {routePreview && (
         <div className="dest-route-preview">
           <div className="dest-route-info">
-            <span>{formatDistance(routeInfo.distance)}</span>
+            <span>{formatDistance(routePreview.distance)}</span>
             <span className="dest-route-sep">·</span>
-            <span>{formatDuration(routeInfo.duration)} by bike</span>
+            <span>{formatDuration(routePreview.duration)} by bike</span>
           </div>
-          <button className="dest-start-btn" onClick={handleStartTrip}>
-            Start Trip
+          <button className="dest-start-btn" onClick={handleStartNavigation}>
+            Start Navigation
           </button>
         </div>
       )}

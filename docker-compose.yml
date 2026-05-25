@@ -43,6 +43,7 @@ services:
     environment:
       VITE_WS_HOST: localhost:8080
       VITE_BACKEND_HTTP: http://backend:8080
+    command: ["sh", "-c", "npm install && npm run dev -- --host 0.0.0.0 --port 5173"]
     ports:
       - "5173:5173"
     volumes:

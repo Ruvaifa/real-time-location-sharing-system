@@ -46,6 +46,15 @@ export interface FitBounds {
   key: number;
 }
 
+export interface RoutePreviewData {
+  origin: [number, number];
+  dest: [number, number];
+  coordinates: [number, number][];
+  distance: number;
+  duration: number;
+  destName: string;
+}
+
 interface AppStore {
   screen: Screen;
   email: string;
@@ -58,6 +67,7 @@ interface AppStore {
   trip: TripData | null;
   ws: WebSocket | null;
   fitBounds: FitBounds | null;
+  routePreview: RoutePreviewData | null;
   setScreen: (screen: Screen) => void;
   setEmail: (email: string) => void;
   setUsername: (username: string) => void;
@@ -75,6 +85,7 @@ interface AppStore {
   updateTripParticipants: (participants: string[]) => void;
   setTripStatus: (status: TripData["status"]) => void;
   setWs: (ws: WebSocket | null) => void;
+  setRoutePreview: (preview: RoutePreviewData | null) => void;
   requestFitBounds: (points: [number, number][]) => void;
   clearFitBounds: () => void;
 }
@@ -91,6 +102,7 @@ export const useAppStore = create<AppStore>((set) => ({
   trip: null,
   ws: null,
   fitBounds: null,
+  routePreview: null,
   setScreen: (screen) => set({ screen }),
   setEmail: (email) => set({ email }),
   setUsername: (username) => set({ username }),
@@ -110,7 +122,7 @@ export const useAppStore = create<AppStore>((set) => ({
       delete next[userID];
       return { peers: next };
     }),
-  clearLiveData: () => set({ location: null, peers: {}, trip: null }),
+  clearLiveData: () => set({ location: null, peers: {}, trip: null, routePreview: null }),
   resetSession: () =>
     set({
       screen: "login",
@@ -122,6 +134,7 @@ export const useAppStore = create<AppStore>((set) => ({
       token: "",
       sim: { active: false, route: null, progress: 0 },
       trip: null,
+      routePreview: null,
     }),
   startSim: (route) =>
     set({ sim: { active: true, route, progress: 0 } }),
@@ -141,6 +154,7 @@ export const useAppStore = create<AppStore>((set) => ({
       return { trip: { ...state.trip, status } };
     }),
   setWs: (ws) => set({ ws }),
+  setRoutePreview: (routePreview) => set({ routePreview }),
   requestFitBounds: (points) =>
     set((state) => ({
       fitBounds: { points, key: (state.fitBounds?.key || 0) + 1 },

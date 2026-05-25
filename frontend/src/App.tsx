@@ -499,6 +499,7 @@ function MapScreen() {
   const setWs = useAppStore((state) => state.setWs);
   const fitBounds = useAppStore((state) => state.fitBounds);
   const requestFitBounds = useAppStore((state) => state.requestFitBounds);
+  const routePreview = useAppStore((state) => state.routePreview);
 
   const ws = useRef<WebSocket | null>(null);
   const [, setTick] = useState(0);
@@ -695,53 +696,77 @@ function MapScreen() {
   // WebSocket connection
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttempt = useRef(0);
+  const activeSocketRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
     let isMounted = true;
 
     function connect() {
       if (!isMounted) return;
+      if (activeSocketRef.current &&
+          (activeSocketRef.current.readyState === WebSocket.CONNECTING ||
+           activeSocketRef.current.readyState === WebSocket.OPEN)) {
+        return;
+      }
       setWsStatus("connecting");
       const socket = new WebSocket(buildWsUrl(groupId, token));
       ws.current = socket;
+      activeSocketRef.current = socket;
       setWs(socket);
 
       socket.onopen = () => {
-        if (!isMounted) return;
+        if (!isMounted || activeSocketRef.current !== socket) return;
         setWsStatus("connected");
         reconnectAttempt.current = 0;
 
         fetchActiveTrip(groupId).then((tripData) => {
-          if (!isMounted || !tripData) return;
+          if (!isMounted) return;
           const currentTrip = useAppStore.getState().trip;
-          if (currentTrip) return;
-          const decoded: import("./store/useAppStore").TripData = {
-            id: tripData.id,
-            creatorID: tripData.creatorID,
-            creatorName: tripData.creatorName,
-            origin: [tripData.originLat, tripData.originLng],
-            originName: tripData.originName,
-            dest: [tripData.destLat, tripData.destLng],
-            destName: tripData.destName,
-            routeCoordinates: tripData.routeGeometry
-              ? parseRouteCoordinates(tripData.routeGeometry)
-              : [],
-            distanceMeters: tripData.distanceMeters,
-            durationSeconds: tripData.durationSeconds,
-            status: tripData.status as import("./store/useAppStore").TripData["status"],
-            participants: tripData.participants || [],
-            startedAt: tripData.startedAt || null,
-          };
-          setTrip(decoded);
-          requestFitBounds([decoded.origin, decoded.dest]);
-          if (tripData.creatorID !== username) {
-            sendWsMessage("trip_join");
+
+          if (tripData) {
+            if (currentTrip) return;
+            const decoded: import("./store/useAppStore").TripData = {
+              id: tripData.id,
+              creatorID: tripData.creatorID,
+              creatorName: tripData.creatorName,
+              origin: [tripData.originLat, tripData.originLng],
+              originName: tripData.originName,
+              dest: [tripData.destLat, tripData.destLng],
+              destName: tripData.destName,
+              routeCoordinates: tripData.routeGeometry
+                ? parseRouteCoordinates(tripData.routeGeometry)
+                : [],
+              distanceMeters: tripData.distanceMeters,
+              durationSeconds: tripData.durationSeconds,
+              status: tripData.status as import("./store/useAppStore").TripData["status"],
+              participants: tripData.participants || [],
+              startedAt: tripData.startedAt || null,
+            };
+            setTrip(decoded);
+            useAppStore.getState().setRoutePreview(null);
+            requestFitBounds([decoded.origin, decoded.dest]);
+            if (tripData.creatorID !== username) {
+              sendWsMessage("trip_join");
+            }
+          } else if (currentTrip) {
+            sendWsMessage("trip_create", {
+              id: currentTrip.id,
+              originLat: currentTrip.origin[0],
+              originLng: currentTrip.origin[1],
+              originName: currentTrip.originName,
+              destLat: currentTrip.dest[0],
+              destLng: currentTrip.dest[1],
+              destName: currentTrip.destName,
+              routeGeometry: JSON.stringify(currentTrip.routeCoordinates),
+              distanceMeters: currentTrip.distanceMeters,
+              durationSeconds: currentTrip.durationSeconds,
+            });
           }
         }).catch(() => {});
       };
 
       socket.onmessage = (event) => {
-        if (!isMounted) return;
+        if (!isMounted || activeSocketRef.current !== socket) return;
         try {
           const msg = JSON.parse(event.data);
           const type = msg.type || "location";
@@ -773,6 +798,7 @@ function MapScreen() {
                 startedAt: data.startedAt || null,
               };
               setTrip(tripData);
+              useAppStore.getState().setRoutePreview(null);
               requestFitBounds([tripData.origin, tripData.dest]);
               if (data.creatorID !== username) {
                 sendWsMessage("trip_join");
@@ -791,7 +817,7 @@ function MapScreen() {
                 if (prev) setTrip({ ...prev, participants: data.participants });
               }
               break;
-            case "trip_started": {
+            case "trip_start": {
               const prev = useAppStore.getState().trip;
               if (prev) setTrip({ ...prev, status: "active", startedAt: data.startedAt || prev.startedAt });
               break;
@@ -806,7 +832,8 @@ function MapScreen() {
       };
 
       socket.onclose = () => {
-        if (!isMounted) return;
+        if (!isMounted || activeSocketRef.current !== socket) return;
+        activeSocketRef.current = null;
         setWsStatus("disconnected");
         const delay = Math.min(1000 * 2 ** reconnectAttempt.current, 16000);
         reconnectAttempt.current += 1;
@@ -819,10 +846,13 @@ function MapScreen() {
     return () => {
       isMounted = false;
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-      ws.current?.close();
+      const sock = activeSocketRef.current;
+      activeSocketRef.current = null;
+      if (sock) sock.close();
+      ws.current = null;
       setWs(null);
     };
-  }, [groupId, username, upsertPeer, removePeer, setTrip, updateTripParticipants, setTripStatus, setWs]);
+  }, [groupId, username]);
 
   // Tick timer for "time ago" updates
   useEffect(() => {
@@ -1046,6 +1076,37 @@ function MapScreen() {
                         interactive={false}
                       />
                     )}
+                  </>
+                )}
+
+                {routePreview && !trip && routePreview.coordinates.length >= 2 && (
+                  <>
+                    <MapRoute
+                      id="preview-route"
+                      coordinates={routePreview.coordinates.map(([lat, lng]) => [lng, lat] as [number, number])}
+                      color={ROUTE_COLOR}
+                      width={5}
+                      opacity={0.8}
+                      interactive={false}
+                    />
+                    <MapMarker
+                      longitude={routePreview.origin[1]}
+                      latitude={routePreview.origin[0]}
+                      anchor="center"
+                    >
+                      <MarkerContent>
+                        <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#4CAF50", border: "2px solid #fff", boxShadow: "0 2px 6px rgba(0,0,0,0.3)" }} />
+                      </MarkerContent>
+                    </MapMarker>
+                    <MapMarker
+                      longitude={routePreview.dest[1]}
+                      latitude={routePreview.dest[0]}
+                      anchor="center"
+                    >
+                      <MarkerContent>
+                        <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#EF5350", border: "2px solid #fff", boxShadow: "0 2px 6px rgba(0,0,0,0.3)" }} />
+                      </MarkerContent>
+                    </MapMarker>
                   </>
                 )}
 
