@@ -166,9 +166,6 @@ export const useAppStore = create<AppStore>((set) => ({
 export function sendWsMessage(type: string, payload: Record<string, unknown> = {}) {
   const ws = useAppStore.getState().ws;
   if (ws && ws.readyState === WebSocket.OPEN) {
-    console.log("[WS SEND]", type, payload);
     ws.send(JSON.stringify({ type, payload }));
-  } else {
-    console.warn("[WS SEND] socket not open, dropping:", type);
   }
 }

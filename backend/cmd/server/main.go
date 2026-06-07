@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -23,10 +23,20 @@ func main() {
 	// 1. Load Configuration
 	cfg := config.Load()
 
+	// Set up structured logging.
+	var logLevel slog.Level
+	if cfg.Env == "production" {
+		logLevel = slog.LevelInfo
+	} else {
+		logLevel = slog.LevelDebug
+	}
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel})))
+
 	// 1b. Initialize database
 	store, err := storage.NewPostgresStore(cfg.DBConnString())
 	if err != nil {
-		log.Fatalf("Database connection failed: %v", err)
+		slog.Error("Database connection failed", "error", err)
+		os.Exit(1)
 	}
 	defer store.Close()
 
@@ -70,24 +80,26 @@ func main() {
 		signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 		<-sigint
 
-		log.Println("Shutting down server gracefully...")
+		slog.Info("Shutting down server gracefully...")
 		hub.Stop()
 		prunerCancel()
+		h.Close()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		if err := srv.Shutdown(ctx); err != nil {
-			log.Printf("HTTP server Shutdown error: %v", err)
+			slog.Error("HTTP server shutdown error", "error", err)
 		}
 		close(idleConnsClosed)
 	}()
 
-	log.Printf("Server starting on port %s in %s mode", cfg.Port, cfg.Env)
+	slog.Info("Server starting", "port", cfg.Port, "env", cfg.Env)
 	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-		log.Fatalf("HTTP server ListenAndServe: %v", err)
+		slog.Error("HTTP server ListenAndServe failed", "error", err)
+		os.Exit(1)
 	}
 
 	<-idleConnsClosed
-	log.Println("Server stopped")
+	slog.Info("Server stopped")
 }

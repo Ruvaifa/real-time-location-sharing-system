@@ -2,8 +2,11 @@ package websocket
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
-	"log"
+	"log/slog"
+	"sync"
 	"time"
 
 	"location-sharing-backend/internal/model"
@@ -24,6 +27,15 @@ type TripQuery struct {
 	Trip    chan *model.Trip
 }
 
+// generateID produces a 16-byte random hex string (UUID v4-like).
+func generateID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		panic("crypto/rand unavailable: " + err.Error())
+	}
+	return hex.EncodeToString(b[:])
+}
+
 // Hub maintains the set of active clients grouped by room and broadcasts
 // messages to peers. All map mutations happen inside Run()'s select loop,
 // so no mutex is needed.
@@ -41,11 +53,14 @@ type Hub struct {
 	MaxGroupSize int
 	MaxMsgRate   int
 	Store        storage.Store
+
+	persistCh     chan model.LocationMessage
+	persistDone   chan struct{}
 }
 
 // NewHub allocates a Hub ready to Run().
 func NewHub(maxGroupSize, maxMsgRate int, store storage.Store) *Hub {
-	return &Hub{
+	h := &Hub{
 		groups:       make(map[string]map[*Client]bool),
 		cache:        make(map[string]map[string]model.LocationMessage),
 		trips:        make(map[string]*model.Trip),
@@ -57,12 +72,40 @@ func NewHub(maxGroupSize, maxMsgRate int, store storage.Store) *Hub {
 		MaxGroupSize: maxGroupSize,
 		MaxMsgRate:   maxMsgRate,
 		Store:        store,
+		persistCh:    make(chan model.LocationMessage, 512),
+		persistDone:  make(chan struct{}),
 	}
+
+	// Start bounded persistence workers.
+	if store != nil {
+		const numWorkers = 4
+		var wg sync.WaitGroup
+		wg.Add(numWorkers)
+		h.persistDone = make(chan struct{})
+		for i := 0; i < numWorkers; i++ {
+			go func() {
+				defer wg.Done()
+				for loc := range h.persistCh {
+					h.persistLocation(loc)
+				}
+			}()
+		}
+		go func() {
+			wg.Wait()
+			close(h.persistDone)
+		}()
+	}
+
+	return h
 }
 
-// Stop signals the Run loop to exit.
+// Stop signals the Run loop to exit and waits for persistence workers to drain.
 func (h *Hub) Stop() {
 	close(h.Quit)
+	if h.Store != nil {
+		close(h.persistCh)
+		<-h.persistDone
+	}
 }
 
 // GetActiveTrip returns the active trip for a group via the hub's event loop.
@@ -94,7 +137,7 @@ func (h *Hub) Run() {
 			}
 
 		case <-h.Quit:
-			log.Println("Hub stopping, closing all connections...")
+			slog.Info("Hub stopping, closing all connections")
 			for _, group := range h.groups {
 				for client := range group {
 					h.handleUnregister(client)
@@ -111,11 +154,11 @@ func (h *Hub) handleRegister(client *Client) {
 		h.cache[client.GroupID] = make(map[string]model.LocationMessage)
 	}
 
-	log.Printf("Registering client %s to group %s", client.UserID, client.GroupID)
+	slog.Debug("Registering client", "user", client.UserID, "group", client.GroupID)
 
 	// Enforce max group size.
 	if len(h.groups[client.GroupID]) >= h.MaxGroupSize {
-		log.Printf("group %s full (%d), rejecting %s", client.GroupID, h.MaxGroupSize, client.UserID)
+		slog.Warn("Group full, rejecting client", "group", client.GroupID, "max", h.MaxGroupSize, "user", client.UserID)
 		client.CloseSend()
 		return
 	}
@@ -144,6 +187,7 @@ func (h *Hub) handleRegister(client *Client) {
 
 	// Replay active trip to the new joiner.
 	if trip, ok := h.trips[client.GroupID]; ok {
+		slog.Info("Replaying trip to new joiner", "user", client.UserID, "group", client.GroupID, "trip_id", trip.ID, "status", trip.Status)
 		tripBytes, err := json.Marshal(trip)
 		if err == nil {
 			wrapped := model.Envelope{Type: model.MsgTypeTripCreate, Payload: tripBytes}
@@ -152,9 +196,12 @@ func (h *Hub) handleRegister(client *Client) {
 				select {
 				case client.Send <- wrappedBytes:
 				default:
+					slog.Warn("Failed to replay trip, send buffer full", "user", client.UserID)
 				}
 			}
 		}
+	} else {
+		slog.Debug("No trip to replay", "user", client.UserID, "group", client.GroupID)
 	}
 }
 
@@ -210,11 +257,11 @@ func (h *Hub) handleUnregister(client *Client) {
 func (h *Hub) handleBroadcast(message HubMessage) {
 	var env model.Envelope
 	if err := json.Unmarshal(message.Payload, &env); err != nil {
-		log.Printf("[BROADCAST] bad envelope from %s: %v (first 200 bytes: %s)", message.Sender.UserID, err, string(message.Payload[:min(len(message.Payload), 200)]))
+		slog.Warn("Bad envelope from client", "user", message.Sender.UserID, "error", err, "payload_prefix", string(message.Payload[:min(len(message.Payload), 200)]))
 		return
 	}
 
-	log.Printf("[BROADCAST] type=%q from %s in group %s", env.Type, message.Sender.UserID, message.Sender.GroupID)
+	slog.Debug("Broadcast received", "type", env.Type, "user", message.Sender.UserID, "group", message.Sender.GroupID)
 
 	switch env.Type {
 	case model.MsgTypeLocation, "":
@@ -230,14 +277,14 @@ func (h *Hub) handleBroadcast(message HubMessage) {
 	case model.MsgTypeTripEnd:
 		h.handleTripEnd(message.Sender)
 	default:
-		log.Printf("unknown message type %q from %s", env.Type, message.Sender.UserID)
+		slog.Warn("Unknown message type", "type", env.Type, "user", message.Sender.UserID)
 	}
 }
 
 func (h *Hub) handleLocation(sender *Client, payload json.RawMessage) {
 	var loc model.LocationMessage
 	if err := json.Unmarshal(payload, &loc); err != nil {
-		log.Printf("bad payload from %s: %v", sender.UserID, err)
+		slog.Warn("Bad location payload", "user", sender.UserID, "error", err)
 		return
 	}
 
@@ -247,7 +294,7 @@ func (h *Hub) handleLocation(sender *Client, payload json.RawMessage) {
 	loc.Timestamp = time.Now().UnixMilli()
 
 	if err := validate.Location(loc); err != nil {
-		log.Printf("invalid location from %s: %v", loc.UserID, err)
+		slog.Warn("Invalid location", "user", loc.UserID, "error", err)
 		return
 	}
 
@@ -257,10 +304,13 @@ func (h *Hub) handleLocation(sender *Client, payload json.RawMessage) {
 	}
 	h.cache[loc.GroupID][loc.UserID] = loc
 
-	// Persist asynchronously.
+	// Persist via bounded worker pool.
 	if h.Store != nil {
-		locCopy := loc
-		go h.persistLocation(locCopy)
+		select {
+		case h.persistCh <- loc:
+		default:
+			slog.Warn("Persist buffer full, dropping location", "user", loc.UserID)
+		}
 	}
 
 	// Re-marshal the sanitized message.
@@ -287,20 +337,21 @@ func (h *Hub) handleLocation(sender *Client, payload json.RawMessage) {
 		select {
 		case client.Send <- wrappedBytes:
 		default:
-			log.Printf("send buffer full for %s, dropping location", client.UserID)
+			slog.Warn("Send buffer full, dropping location", "user", client.UserID)
 		}
 	}
 }
 
 func (h *Hub) handleTripCreate(sender *Client, payload json.RawMessage) {
-	log.Printf("[TRIP] trip_create from %s in group %s (payload %d bytes)", sender.UserID, sender.GroupID, len(payload))
+	slog.Info("Trip create request", "user", sender.UserID, "group", sender.GroupID, "payload_bytes", len(payload))
 	var trip model.Trip
 	if err := json.Unmarshal(payload, &trip); err != nil {
-		log.Printf("[TRIP] bad trip_create from %s: %v", sender.UserID, err)
+		slog.Warn("Bad trip_create payload", "user", sender.UserID, "error", err)
 		return
 	}
 
-	// Server-trusted fields.
+	// Server-trusted fields — always override client-supplied values.
+	trip.ID = generateID()
 	trip.CreatorID = sender.UserID
 	trip.GroupID = sender.GroupID
 	trip.Status = model.TripStatusPlanning
@@ -308,20 +359,28 @@ func (h *Hub) handleTripCreate(sender *Client, payload json.RawMessage) {
 	trip.CreatedAt = time.Now().UnixMilli()
 
 	if err := validate.TripCreate(&trip); err != nil {
-		log.Printf("[TRIP] invalid trip from %s: %v", sender.UserID, err)
+		slog.Warn("Invalid trip_create", "user", sender.UserID, "error", err)
 		return
 	}
 
-	log.Printf("[TRIP] broadcasting trip_created: routeGeometry len=%d, dest=(%f,%f)", len(trip.RouteGeometry), trip.DestLat, trip.DestLng)
+	slog.Info("Trip created, broadcasting",
+		"trip_id", trip.ID,
+		"creator", trip.CreatorID,
+		"status", trip.Status,
+		"route_geometry_len", len(trip.RouteGeometry),
+		"dest_lat", trip.DestLat,
+		"dest_lng", trip.DestLng,
+	)
 
 	// Persist to DB.
 	if h.Store != nil {
 		if err := h.Store.CreateTrip(context.Background(), &trip); err != nil {
-			log.Printf("[TRIP] db create trip error: %v", err)
+			slog.Error("Failed to create trip in DB", "trip_id", trip.ID, "error", err)
 		}
 	}
 
 	h.trips[sender.GroupID] = &trip
+	slog.Info("Trip stored in hub", "group", sender.GroupID, "trip_id", trip.ID, "total_trips", len(h.trips))
 	h.broadcastToGroup(sender.GroupID, model.MsgTypeTripCreate, trip, nil)
 }
 
@@ -341,7 +400,7 @@ func (h *Hub) handleTripJoin(sender *Client) {
 
 	if h.Store != nil {
 		if err := h.Store.UpdateTripParticipants(context.Background(), trip.ID, trip.Participants); err != nil {
-			log.Printf("db update participants error: %v", err)
+			slog.Error("Failed to update trip participants", "trip_id", trip.ID, "error", err)
 		}
 	}
 
@@ -354,7 +413,12 @@ func (h *Hub) handleTripLeave(sender *Client) {
 
 func (h *Hub) handleTripStart(sender *Client) {
 	trip, ok := h.trips[sender.GroupID]
-	if !ok || trip.CreatorID != sender.UserID {
+	if !ok {
+		slog.Warn("trip_start: no trip found", "user", sender.UserID, "group", sender.GroupID)
+		return
+	}
+	if trip.CreatorID != sender.UserID {
+		slog.Warn("trip_start: not creator", "user", sender.UserID, "creator", trip.CreatorID)
 		return
 	}
 
@@ -362,12 +426,18 @@ func (h *Hub) handleTripStart(sender *Client) {
 	now := time.Now().UnixMilli()
 	trip.StartedAt = &now
 
+	slog.Info("Trip started", "trip_id", trip.ID, "user", sender.UserID)
 	h.broadcastToGroup(sender.GroupID, model.MsgTypeTripStart, trip, nil)
 }
 
 func (h *Hub) handleTripEnd(sender *Client) {
 	trip, ok := h.trips[sender.GroupID]
-	if !ok || trip.CreatorID != sender.UserID {
+	if !ok {
+		slog.Warn("trip_end: no trip found", "user", sender.UserID, "group", sender.GroupID, "trips_keys", len(h.trips))
+		return
+	}
+	if trip.CreatorID != sender.UserID {
+		slog.Warn("trip_end: not creator", "user", sender.UserID, "creator", trip.CreatorID)
 		return
 	}
 
@@ -375,6 +445,7 @@ func (h *Hub) handleTripEnd(sender *Client) {
 	now := time.Now().UnixMilli()
 	trip.EndedAt = &now
 
+	slog.Info("Trip ended, broadcasting", "trip_id", trip.ID, "user", sender.UserID)
 	h.broadcastToGroup(sender.GroupID, model.MsgTypeTripEnd, trip, nil)
 	delete(h.trips, sender.GroupID)
 }
@@ -395,7 +466,7 @@ func (h *Hub) removeTripParticipant(groupID, userID string) {
 
 	if h.Store != nil {
 		if err := h.Store.UpdateTripParticipants(context.Background(), trip.ID, trip.Participants); err != nil {
-			log.Printf("db update participants error: %v", err)
+			slog.Error("Failed to update trip participants on leave", "trip_id", trip.ID, "error", err)
 		}
 	}
 
@@ -434,10 +505,10 @@ func (h *Hub) persistLocation(loc model.LocationMessage) {
 	defer cancel()
 
 	if err := h.Store.UpsertUser(ctx, loc.UserID, loc.Name); err != nil {
-		log.Printf("db upsert user error (user=%s): %v", loc.UserID, err)
+		slog.Error("Failed to upsert user", "user", loc.UserID, "error", err)
 		return
 	}
 	if err := h.Store.InsertLocation(ctx, loc); err != nil {
-		log.Printf("db insert location error (user=%s): %v", loc.UserID, err)
+		slog.Error("Failed to insert location", "user", loc.UserID, "error", err)
 	}
 }

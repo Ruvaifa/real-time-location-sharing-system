@@ -1,3 +1,4 @@
+import { useAppStore } from "../store/useAppStore";
 import { decodePolyline } from "./routing";
 
 export interface TripData {
@@ -32,7 +33,10 @@ export function parseRouteCoordinates(routeGeometry: string): [number, number][]
 }
 
 export async function fetchActiveTrip(groupID: string): Promise<TripData | null> {
-  const res = await fetch(`/api/trip/${encodeURIComponent(groupID)}`);
+  const token = useAppStore.getState().token;
+  const res = await fetch(`/api/trip/${encodeURIComponent(groupID)}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
   if (!res.ok) return null;
   const text = await res.text();
   if (text === "null" || !text) return null;

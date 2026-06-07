@@ -2,6 +2,7 @@ package handler
 
 import (
 	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -25,6 +26,8 @@ type Handler struct {
 	upgrader  websocket.Upgrader
 	routeH    *routing.Handler
 	geoH      *geocoding.Handler
+	generalLimiter *appmw.IPRateLimiter
+	loginLimiter   *appmw.IPRateLimiter
 }
 
 // NewHandler creates a Handler with a configured WebSocket upgrader.
@@ -55,35 +58,59 @@ func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
 
 	// Global limiters
-	generalLimiter := appmw.NewIPRateLimiter(10, 20)
-	loginLimiter := appmw.NewIPRateLimiter(1, 5)
+	h.generalLimiter = appmw.NewIPRateLimiter(10, 20)
+	h.loginLimiter = appmw.NewIPRateLimiter(1, 5)
 
-	r.Use(chimw.Logger)
+	r.Use(chimw.RequestID)
+	r.Use(chimw.RealIP)
+	r.Use(appmw.LoggerWithFormatter(&appmw.SanitizedLogFormatter{
+		Inner:  &chimw.DefaultLogFormatter{Logger: log.Default()},
+		Redact: []string{"token"},
+	}))
 	r.Use(chimw.Recoverer)
 	r.Use(appmw.CORS(h.cfg.AllowedOrigins))
-	r.Use(appmw.RateLimit(generalLimiter))
+	r.Use(appmw.RateLimit(h.generalLimiter))
 
 	// Public routes
-	r.With(appmw.RateLimit(loginLimiter)).Post("/login", h.Login)
+	r.With(appmw.RateLimit(h.loginLimiter)).Post("/login", h.Login)
 	r.Get("/health", h.Health)
+	r.Get("/ready", h.Ready)
 
-	// API routes
-	r.Get("/api/search", h.geoH.Search)
-	r.Get("/api/route", h.routeH.GetRoute)
-	r.Get("/api/trip/{groupID}", h.GetActiveTrip)
-
-	// Protected WebSocket route
+	// Protected API routes
 	r.Group(func(r chi.Router) {
 		r.Use(appmw.Auth(h.tm))
+		r.Get("/api/search", h.geoH.Search)
+		r.Get("/api/route", h.routeH.GetRoute)
+		r.Get("/api/trip/{groupID}", h.GetActiveTrip)
 		r.Get("/ws/{groupID}", h.ServeWs)
 	})
 
 	return r
 }
 
+// Close releases resources held by the handler (rate limiter sweep goroutines).
+func (h *Handler) Close() {
+	if h.generalLimiter != nil {
+		h.generalLimiter.Stop()
+	}
+	if h.loginLimiter != nil {
+		h.loginLimiter.Stop()
+	}
+}
+
 // Health is a simple liveness probe.
 func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
-	log.Printf("Health check requested from %s", r.RemoteAddr)
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("OK"))
+}
+
+// Ready checks that downstream dependencies (DB) are reachable.
+func (h *Handler) Ready(w http.ResponseWriter, r *http.Request) {
+	if err := h.hub.Store.Ping(r.Context()); err != nil {
+		slog.Error("Readiness check failed", "error", err)
+		apierr.Render(w, http.StatusServiceUnavailable, "NOT_READY", "Database unreachable")
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("OK"))
 }
@@ -91,7 +118,6 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 // Login creates a JWT for a user. In a real app, you'd check passwords here.
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	userID := r.URL.Query().Get("username")
-	log.Printf("Login attempt for username: %s", userID)
 	if userID == "" {
 		apierr.Render(w, http.StatusBadRequest, "MISSING_USERNAME", "username query parameter is required")
 		return
@@ -99,6 +125,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 
 	token, err := h.tm.Generate(userID)
 	if err != nil {
+		slog.Error("Failed to generate token", "user", userID, "error", err)
 		apierr.Render(w, http.StatusInternalServerError, "AUTH_ERROR", "Could not generate token")
 		return
 	}
@@ -129,10 +156,10 @@ func (h *Handler) ServeWs(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("ws upgrade error: %v", err)
+		slog.Error("WebSocket upgrade failed", "error", err)
 		return
 	}
-	log.Printf("WebSocket connection upgraded for user %s in group %s", userID, groupID)
+	slog.Info("WebSocket connection upgraded", "user", userID, "group", groupID)
 
 	client := &ws.Client{
 		Hub:     h.hub,

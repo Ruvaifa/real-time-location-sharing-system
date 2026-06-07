@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -55,7 +55,10 @@ func (r *OSRMRouter) GetRoute(ctx context.Context, req RouteRequest) (*RouteResu
 		req.DestLng, req.DestLat,
 	)
 
-	log.Printf("[ROUTING] OSRM request: origin=(%f,%f) dest=(%f,%f)", req.OriginLat, req.OriginLng, req.DestLat, req.DestLng)
+	slog.Debug("OSRM route request",
+		"origin_lat", req.OriginLat, "origin_lng", req.OriginLng,
+		"dest_lat", req.DestLat, "dest_lng", req.DestLng,
+	)
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -98,7 +101,11 @@ func (r *OSRMRouter) GetRoute(ctx context.Context, req RouteRequest) (*RouteResu
 	// Not used for rendering, but kept in the struct.
 	geometry := fmt.Sprintf("geojson:%dpts", len(coords))
 
-	log.Printf("[ROUTING] OSRM route: %d points, %.0fm, %.0fs", len(coords), route.Distance, route.Duration)
+	slog.Debug("OSRM route computed",
+		"points", len(coords),
+		"distance_m", route.Distance,
+		"duration_s", route.Duration,
+	)
 
 	result := &RouteResult{
 		Geometry:    geometry,

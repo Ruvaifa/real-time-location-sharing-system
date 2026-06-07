@@ -411,6 +411,7 @@ function PickerScreen() {
   const setGroupId = useAppStore((state) => state.setGroupId);
   const setScreen = useAppStore((state) => state.setScreen);
   const setToken = useAppStore((state) => state.setToken);
+  const [pickerError, setPickerError] = useState<string | null>(null);
 
   const canStart = username.trim() && groupId.trim();
 
@@ -443,9 +444,10 @@ function PickerScreen() {
           className="continue-btn"
           onClick={async () => {
             if (!canStart) {
-              alert("Please enter a Username and Room ID to start.");
+              setPickerError("Please enter a Username and Room ID to start.");
               return;
             }
+            setPickerError(null);
             try {
               const host = import.meta.env.VITE_WS_HOST || window.location.host;
               const protocol = window.location.protocol === "https:" ? "https:" : "http:";
@@ -458,7 +460,7 @@ function PickerScreen() {
               setScreen("map");
             } catch (err) {
               console.error(err);
-              alert("Could not connect to the server.");
+              setPickerError("Could not connect to the server.");
             }
           }}
           disabled={!canStart}
@@ -468,6 +470,11 @@ function PickerScreen() {
         <div className="onboarding-footer">
           No account needed &middot; end-to-end ephemeral
         </div>
+        {pickerError && (
+          <div style={{ marginTop: 12, padding: "8px 12px", background: "rgba(255,80,80,0.12)", border: "1px solid rgba(255,80,80,0.25)", borderRadius: 8, color: "#ff6b6b", fontSize: 13, textAlign: "center" }}>
+            {pickerError}
+          </div>
+        )}
       </div>
     </motion.div>
   );
@@ -919,9 +926,8 @@ function MapScreen() {
         if (!isMounted || activeSocketRef.current !== socket) return;
         try {
           const msg = JSON.parse(event.data);
-          const type = msg.type || "location";
+           const type = msg.type || "location";
           const data = msg.payload || msg;
-          console.log("[WS RECV]", type, data);
 
           switch (type) {
             case "location":

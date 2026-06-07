@@ -2,7 +2,7 @@ package routing
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -49,7 +49,7 @@ func (h *Handler) GetRoute(w http.ResponseWriter, r *http.Request) {
 		DestLng:   dest[1],
 	})
 	if err != nil {
-		log.Printf("routing error: %v", err)
+		slog.Error("Routing failed", "origin", originStr, "dest", destStr, "error", err)
 		apierr.Render(w, http.StatusBadGateway, "ROUTING_ERROR", "Could not compute route")
 		return
 	}

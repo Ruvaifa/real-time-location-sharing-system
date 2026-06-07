@@ -8,6 +8,7 @@ export function DestinationSearch() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   const location = useAppStore((s) => s.location);
   const setTrip = useAppStore((s) => s.setTrip);
   const trip = useAppStore((s) => s.trip);
@@ -18,6 +19,11 @@ export function DestinationSearch() {
   const inputRef = useRef<HTMLInputElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3000);
+  };
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -42,7 +48,6 @@ export function DestinationSearch() {
       setLoading(true);
       try {
         const res = await searchPlaces(value);
-        console.log("Geocoding results:", res);
         setResults(res);
       } catch (err) {
         console.error("Geocoding error:", err);
@@ -58,7 +63,7 @@ export function DestinationSearch() {
     setResults([]);
 
     if (!location) {
-      alert("Waiting for your location...");
+      showToast("Waiting for your location...");
       return;
     }
 
@@ -81,7 +86,7 @@ export function DestinationSearch() {
         [result.lat, result.lng],
       ]);
     } catch {
-      alert("Could not compute route. Try again.");
+      showToast("Could not compute route. Try again.");
     } finally {
       setLoading(false);
     }
@@ -194,6 +199,9 @@ export function DestinationSearch() {
             Start Navigation
           </button>
         </div>
+      )}
+      {toast && (
+        <div className="dest-toast">{toast}</div>
       )}
     </div>
   );

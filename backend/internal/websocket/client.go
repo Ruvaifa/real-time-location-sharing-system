@@ -1,7 +1,7 @@
 package websocket
 
 import (
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -55,13 +55,13 @@ func (c *Client) ReadPump() {
 		_, payload, err := c.Conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
-				log.Printf("ws read error (user=%s group=%s): %v", c.UserID, c.GroupID, err)
+				slog.Warn("WebSocket read error", "user", c.UserID, "group", c.GroupID, "error", err)
 			}
 			break
 		}
 
 		if !limiter.Allow() {
-			log.Printf("rate limited (user=%s group=%s)", c.UserID, c.GroupID)
+			slog.Warn("Rate limited", "user", c.UserID, "group", c.GroupID)
 			continue
 		}
 

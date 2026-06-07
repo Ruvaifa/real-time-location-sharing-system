@@ -95,6 +95,11 @@ func (s *PostgresStore) Close() error {
 	return s.db.Close()
 }
 
+// Ping verifies the database connection is alive.
+func (s *PostgresStore) Ping(ctx context.Context) error {
+	return s.db.PingContext(ctx)
+}
+
 // CreateTrip inserts a new trip record.
 func (s *PostgresStore) CreateTrip(ctx context.Context, trip *model.Trip) error {
 	participantsJSON, err := json.Marshal(trip.Participants)

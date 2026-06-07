@@ -2,7 +2,7 @@ package handler
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -20,7 +20,7 @@ func (h *Handler) GetActiveTrip(w http.ResponseWriter, r *http.Request) {
 
 	trip, err := h.hub.GetActiveTrip(groupID)
 	if err != nil {
-		log.Printf("get active trip error: %v", err)
+		slog.Error("Failed to get active trip", "group", groupID, "error", err)
 		apierr.Render(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not fetch trip")
 		return
 	}

@@ -2,7 +2,7 @@ package geocoding
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"location-sharing-backend/pkg/apierr"
@@ -26,10 +26,10 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Geocoding search: %q", query)
+	slog.Debug("Geocoding search", "query", query)
 	results, err := h.geocoder.Search(r.Context(), query)
 	if err != nil {
-		log.Printf("geocoding error: %v", err)
+		slog.Error("Geocoding search failed", "query", query, "error", err)
 		apierr.Render(w, http.StatusBadGateway, "GEOCODING_ERROR", "Could not search places")
 		return
 	}

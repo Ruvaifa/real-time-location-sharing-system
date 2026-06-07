@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -68,17 +69,16 @@ func (c *Config) DBConnString() string {
 }
 
 func (c *Config) validate() {
-	if c.Env == "production" && (c.JWTSecret == "" || c.JWTSecret == "super-secret-key-change-me-in-production") {
-		// In a real production app, we should panic or exit.
-		// For now, we'll just log a huge warning.
-		println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-		println("CRITICAL SECURITY WARNING: Insecure JWT_SECRET used in production!")
-		println("Please set a strong JWT_SECRET environment variable.")
-		println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-	}
+	const insecureDefault = "super-secret-key-change-me-in-production"
 
-	if c.JWTSecret == "" {
-		c.JWTSecret = "super-secret-key-change-me-in-production"
+	if c.JWTSecret == "" || c.JWTSecret == insecureDefault {
+		if c.Env == "production" {
+			slog.Error("FATAL: JWT_SECRET is empty or uses the insecure default. Set a strong JWT_SECRET environment variable.")
+			os.Exit(1)
+		}
+		if c.JWTSecret == "" {
+			c.JWTSecret = insecureDefault
+		}
 	}
 }
 

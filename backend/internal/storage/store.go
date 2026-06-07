@@ -18,6 +18,7 @@ type Store interface {
 	UpdateTripStatus(ctx context.Context, tripID, status string) error
 	UpdateTripParticipants(ctx context.Context, tripID string, participants []string) error
 
+	Ping(ctx context.Context) error
 	Close() error
 }
 

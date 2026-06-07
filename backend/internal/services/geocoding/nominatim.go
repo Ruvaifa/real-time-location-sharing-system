@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -46,12 +47,14 @@ func (g *NominatimGeocoder) Search(ctx context.Context, query string) ([]SearchR
 		return cached, nil
 	}
 
-	g.rateLimit()
+	if err := g.waitForTurn(ctx); err != nil {
+		return nil, err
+	}
 
 	url := fmt.Sprintf(
 		"%s/search?q=%s&format=json&limit=5&addressdetails=1",
 		g.baseURL,
-		query,
+		url.QueryEscape(query),
 	)
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -97,14 +100,25 @@ func (g *NominatimGeocoder) Search(ctx context.Context, query string) ([]SearchR
 	return results, nil
 }
 
-// rateLimit enforces Nominatim's 1 req/s usage policy.
-func (g *NominatimGeocoder) rateLimit() {
+// waitForTurn enforces Nominatim's 1 req/s usage policy without blocking
+// the goroutine indefinitely. It respects context cancellation.
+func (g *NominatimGeocoder) waitForTurn(ctx context.Context) error {
 	g.mu.Lock()
-	defer g.mu.Unlock()
-
 	elapsed := time.Since(g.lastReq)
 	if elapsed < 1*time.Second {
-		time.Sleep(1*time.Second - elapsed)
+		delay := 1*time.Second - elapsed
+		timer := time.NewTimer(delay)
+		g.mu.Unlock()
+		select {
+		case <-timer.C:
+			// Wait complete.
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		}
+		g.mu.Lock()
 	}
 	g.lastReq = time.Now()
+	g.mu.Unlock()
+	return nil
 }
