@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { ChatMessage } from "../lib/chat";
 
 export type Screen = "login" | "picker" | "map";
 
@@ -68,6 +69,7 @@ interface AppStore {
   ws: WebSocket | null;
   fitBounds: FitBounds | null;
   routePreview: RoutePreviewData | null;
+  chatMessages: ChatMessage[];
   setScreen: (screen: Screen) => void;
   setEmail: (email: string) => void;
   setUsername: (username: string) => void;
@@ -86,8 +88,19 @@ interface AppStore {
   setTripStatus: (status: TripData["status"]) => void;
   setWs: (ws: WebSocket | null) => void;
   setRoutePreview: (preview: RoutePreviewData | null) => void;
+  setChatMessages: (messages: ChatMessage[]) => void;
+  appendChatMessage: (message: ChatMessage) => void;
+  clearChatMessages: () => void;
   requestFitBounds: (points: [number, number][]) => void;
   clearFitBounds: () => void;
+}
+
+function chatMessageKey(message: ChatMessage): string {
+  return (
+    message.clientMessageId ||
+    message.messageID ||
+    `${message.userID}:${message.timestamp}:${message.text}`
+  );
 }
 
 export const useAppStore = create<AppStore>((set) => ({
@@ -103,6 +116,7 @@ export const useAppStore = create<AppStore>((set) => ({
   ws: null,
   fitBounds: null,
   routePreview: null,
+  chatMessages: [],
   setScreen: (screen) => set({ screen }),
   setEmail: (email) => set({ email }),
   setUsername: (username) => set({ username }),
@@ -122,7 +136,7 @@ export const useAppStore = create<AppStore>((set) => ({
       delete next[userID];
       return { peers: next };
     }),
-  clearLiveData: () => set({ location: null, peers: {}, trip: null, routePreview: null }),
+  clearLiveData: () => set({ location: null, peers: {}, trip: null, routePreview: null, chatMessages: [] }),
   resetSession: () =>
     set({
       screen: "login",
@@ -135,6 +149,7 @@ export const useAppStore = create<AppStore>((set) => ({
       sim: { active: false, route: null, progress: 0 },
       trip: null,
       routePreview: null,
+      chatMessages: [],
     }),
   startSim: (route) =>
     set({ sim: { active: true, route, progress: 0 } }),
@@ -155,6 +170,29 @@ export const useAppStore = create<AppStore>((set) => ({
     }),
   setWs: (ws) => set({ ws }),
   setRoutePreview: (routePreview) => set({ routePreview }),
+  setChatMessages: (messages) =>
+    set((state) => {
+      const incomingKeys = new Set(messages.map(chatMessageKey));
+      const pendingOrNew = state.chatMessages.filter(
+        (msg) => msg.status === "sending" || !incomingKeys.has(chatMessageKey(msg))
+      );
+      const combined = [...messages, ...pendingOrNew].sort((a, b) => a.timestamp - b.timestamp);
+      return { chatMessages: combined };
+    }),
+  appendChatMessage: (message) =>
+    set((state) => {
+      const key = chatMessageKey(message);
+      const existingIndex = state.chatMessages.findIndex((item) => chatMessageKey(item) === key);
+
+      if (existingIndex === -1) {
+        return { chatMessages: [...state.chatMessages, message] };
+      }
+
+      const next = [...state.chatMessages];
+      next[existingIndex] = { ...next[existingIndex], ...message };
+      return { chatMessages: next };
+    }),
+  clearChatMessages: () => set({ chatMessages: [] }),
   requestFitBounds: (points) =>
     set((state) => ({
       fitBounds: { points, key: (state.fitBounds?.key || 0) + 1 },

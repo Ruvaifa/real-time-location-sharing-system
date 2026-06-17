@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Moon, Sun, Compass, Radio, Navigation, Route, ClipboardCopy } from "lucide-react";
+import { Moon, Sun, Compass, Radio, Navigation, Route, ClipboardCopy, MessageSquare } from "lucide-react";
 import Maplibregl from "maplibre-gl";
 
 import "./styles.css";
@@ -16,10 +16,12 @@ import {
   useMap,
 } from "./components/ui/map";
 import { DestinationSearch } from "./components/DestinationSearch";
+import { GroupChatPanel } from "./components/GroupChatPanel";
 import { TripPanel } from "./components/TripPanel";
 import { LocationData, Route as RouteType, useAppStore, sendWsMessage } from "./store/useAppStore";
 import { getRoute } from "./lib/routing";
 import { fetchActiveTrip, parseRouteCoordinates } from "./lib/trip";
+import { normalizeChatMessage } from "./lib/chat";
 
 function buildWsUrl(groupId: string, token: string): string {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -506,6 +508,8 @@ function MapScreen() {
   const trip = useAppStore((state) => state.trip);
   const setTrip = useAppStore((state) => state.setTrip);
   const setWs = useAppStore((state) => state.setWs);
+  const setChatMessages = useAppStore((state) => state.setChatMessages);
+  const appendChatMessage = useAppStore((state) => state.appendChatMessage);
   const fitBounds = useAppStore((state) => state.fitBounds);
   const requestFitBounds = useAppStore((state) => state.requestFitBounds);
   const routePreview = useAppStore((state) => state.routePreview);
@@ -513,6 +517,7 @@ function MapScreen() {
   const ws = useRef<WebSocket | null>(null);
   const [, setTick] = useState(0);
   const [view, setView] = useState<"globe" | "map">("globe");
+  const [chatOpen, setChatOpen] = useState(true);
   const [mapStyle, setMapStyle] = useState<keyof typeof MAP_STYLES>("dark");
   const [showRoutePicker, setShowRoutePicker] = useState(false);
   const [routePath, setRoutePath] = useState<LineCoordinate[]>([]);
@@ -981,6 +986,28 @@ function MapScreen() {
             case "trip_end":
               setTrip(null);
               break;
+            case "chat_history": {
+              const items = Array.isArray(data.items)
+                ? data.items
+                : Array.isArray(data.messages)
+                  ? data.messages
+                  : Array.isArray(data)
+                    ? data
+                    : [];
+
+              const messages = items
+                .map((item: unknown) => normalizeChatMessage(item))
+                .filter((item): item is NonNullable<ReturnType<typeof normalizeChatMessage>> => item !== null);
+              setChatMessages(messages);
+              break;
+            }
+            case "chat_message": {
+              const message = normalizeChatMessage(data.payload || data);
+              if (message) {
+                appendChatMessage(message);
+              }
+              break;
+            }
           }
         } catch (err) {
           console.error("Failed to parse websocket message", err);
@@ -1108,8 +1135,16 @@ function MapScreen() {
                   }}
                   title="Copy room code"
                 >
-                  <ClipboardCopy size={15} style={{ marginRight: 4, verticalAlign: -2 }} />
+                  <ClipboardCopy size={15} />
                   Room
+                </button>
+                <button
+                  className={`map-pill-btn ${chatOpen ? "sim-active" : ""}`}
+                  onClick={() => setChatOpen((value) => !value)}
+                  title="Toggle chat panel"
+                >
+                  <MessageSquare size={14} />
+                  Chat
                 </button>
                 <div className="sim-btn-wrap">
                   <button
@@ -1122,26 +1157,29 @@ function MapScreen() {
                       }
                     }}
                   >
-                    <Radio size={14} style={{ marginRight: 4, verticalAlign: -2 }} />
+                    <Radio size={14} />
                     {sim.active ? "Stop" : "Sim"}
                   </button>
                   {showRoutePicker && !sim.active && (
-                    <div className="route-picker">
-                      <div className="route-picker-header">Choose a route</div>
-                      {SIM_ROUTES.map((route) => (
-                        <button
-                          key={route.id}
-                          className="route-option"
-                          onClick={() => toggleSimulate(route)}
-                        >
-                          <Route size={14} />
-                          <div className="route-option-info">
-                            <span className="route-option-name">{route.name}</span>
-                            <span className="route-option-dist">{route.distanceKm} km</span>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
+                    <>
+                      <div className="modal-backdrop" onClick={() => setShowRoutePicker(false)} />
+                      <div className="route-picker">
+                        <div className="route-picker-header">Choose a route</div>
+                        {SIM_ROUTES.map((route) => (
+                          <button
+                            key={route.id}
+                            className="route-option"
+                            onClick={() => toggleSimulate(route)}
+                          >
+                            <Route size={14} />
+                            <div className="route-option-info">
+                              <span className="route-option-name">{route.name}</span>
+                              <span className="route-option-dist">{route.distanceKm} km</span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </>
                   )}
                 </div>
                 <button
@@ -1516,7 +1554,7 @@ function MapScreen() {
         </div>
       )}
 
-      {view === "map" && (
+      {view === "map" && !trip && (
         <div className="users-panel">
           <div className="drag-handle" />
           <div className="panel-head">
@@ -1571,6 +1609,13 @@ function MapScreen() {
 
       {view === "map" && trip && (
         <TripPanel />
+      )}
+
+      {view === "map" && (
+        <GroupChatPanel
+          isOpen={chatOpen}
+          onToggle={() => setChatOpen((value) => !value)}
+        />
       )}
     </motion.div>
   );
