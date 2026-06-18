@@ -9,10 +9,11 @@ type Envelope struct {
 }
 
 const (
-	MsgTypeLocation   = "location"
-	MsgTypeTripCreate = "trip_create"
-	MsgTypeTripJoin   = "trip_join"
-	MsgTypeTripLeave  = "trip_leave"
-	MsgTypeTripStart  = "trip_start"
-	MsgTypeTripEnd    = "trip_end"
+	MsgTypeLocation    = "location"
+	MsgTypeTripCreate  = "trip_create"
+	MsgTypeTripJoin    = "trip_join"
+	MsgTypeTripLeave   = "trip_leave"
+	MsgTypeTripStart   = "trip_start"
+	MsgTypeTripEnd     = "trip_end"
+	MsgTypeChatMessage = "chat_message"
 )

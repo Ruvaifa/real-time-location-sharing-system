@@ -18,6 +18,11 @@ type Store interface {
 	UpdateTripStatus(ctx context.Context, tripID, status string) error
 	UpdateTripParticipants(ctx context.Context, tripID string, participants []string) error
 
+	UpsertRoomMember(ctx context.Context, groupID, userID, username string) error
+	IsRoomMember(ctx context.Context, groupID, userID string) (bool, error)
+	CreateChatMessage(ctx context.Context, msg *model.ChatMessage) error
+	ListChatMessages(ctx context.Context, groupID string, limit int, before int64) ([]model.ChatMessage, error)
+
 	Ping(ctx context.Context) error
 	Close() error
 }

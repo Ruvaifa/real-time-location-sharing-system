@@ -209,11 +209,13 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
                       <span className="chat-message-time">{formatTime(message.timestamp)}</span>
                     </div>
                     <p className="chat-message-text">{message.text}</p>
-                    <div className="chat-message-foot">
-                      <span className={`chat-message-status ${message.status === "sending" ? "sending" : "sent"}`}>
-                        {message.status === "sending" ? "Sending" : "Sent"}
-                      </span>
-                    </div>
+                    {isSelf && (
+                      <div className="chat-message-foot">
+                        <span className={`chat-message-status ${message.status === "sending" ? "sending" : "sent"}`}>
+                          {message.status === "sending" ? "Sending" : "Sent"}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               );

@@ -54,8 +54,8 @@ type Hub struct {
 	MaxMsgRate   int
 	Store        storage.Store
 
-	persistCh     chan model.LocationMessage
-	persistDone   chan struct{}
+	persistCh   chan model.LocationMessage
+	persistDone chan struct{}
 }
 
 // NewHub allocates a Hub ready to Run().
@@ -276,6 +276,8 @@ func (h *Hub) handleBroadcast(message HubMessage) {
 		h.handleTripStart(message.Sender)
 	case model.MsgTypeTripEnd:
 		h.handleTripEnd(message.Sender)
+	case model.MsgTypeChatMessage:
+		h.handleChatMessage(message.Sender, env.Payload)
 	default:
 		slog.Warn("Unknown message type", "type", env.Type, "user", message.Sender.UserID)
 	}
@@ -471,6 +473,45 @@ func (h *Hub) removeTripParticipant(groupID, userID string) {
 	}
 
 	h.broadcastToGroup(groupID, model.MsgTypeTripLeave, trip, nil)
+}
+
+func (h *Hub) handleChatMessage(sender *Client, payload json.RawMessage) {
+	var msg model.ChatMessage
+	if err := json.Unmarshal(payload, &msg); err != nil {
+		slog.Warn("Bad chat payload", "user", sender.UserID, "group", sender.GroupID, "error", err)
+		return
+	}
+
+	// Trust the socket identity, not client-supplied sender metadata.
+	msg.MessageID = generateID()
+	msg.GroupID = sender.GroupID
+	msg.UserID = sender.UserID
+	msg.Username = sender.UserID
+	msg.Timestamp = time.Now().UnixMilli()
+
+	if err := validate.ChatMessage(&msg); err != nil {
+		slog.Warn("Invalid chat message", "user", sender.UserID, "group", sender.GroupID, "error", err)
+		return
+	}
+
+	if h.Store == nil {
+		slog.Error("Chat message rejected because store is unavailable", "user", sender.UserID, "group", sender.GroupID)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if err := h.Store.UpsertRoomMember(ctx, sender.GroupID, sender.UserID, sender.UserID); err != nil {
+		slog.Error("Failed to refresh room membership before chat persist", "user", sender.UserID, "group", sender.GroupID, "error", err)
+		return
+	}
+	if err := h.Store.CreateChatMessage(ctx, &msg); err != nil {
+		slog.Error("Failed to persist chat message", "user", sender.UserID, "group", sender.GroupID, "error", err)
+		return
+	}
+
+	h.broadcastToGroup(sender.GroupID, model.MsgTypeChatMessage, msg, nil)
 }
 
 func (h *Hub) broadcastToGroup(groupID, msgType string, data interface{}, exclude *Client) {

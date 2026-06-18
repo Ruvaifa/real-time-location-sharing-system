@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"context"
 	"log"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
@@ -20,12 +22,12 @@ import (
 
 // Handler holds dependencies for HTTP handlers.
 type Handler struct {
-	hub       *ws.Hub
-	cfg       *config.Config
-	tm        *auth.TokenManager
-	upgrader  websocket.Upgrader
-	routeH    *routing.Handler
-	geoH      *geocoding.Handler
+	hub            *ws.Hub
+	cfg            *config.Config
+	tm             *auth.TokenManager
+	upgrader       websocket.Upgrader
+	routeH         *routing.Handler
+	geoH           *geocoding.Handler
 	generalLimiter *appmw.IPRateLimiter
 	loginLimiter   *appmw.IPRateLimiter
 }
@@ -38,9 +40,9 @@ func NewHandler(hub *ws.Hub, cfg *config.Config, router routing.Router, geocoder
 	}
 
 	return &Handler{
-		hub:  hub,
-		cfg:  cfg,
-		tm:   auth.NewTokenManager(cfg.JWTSecret),
+		hub:    hub,
+		cfg:    cfg,
+		tm:     auth.NewTokenManager(cfg.JWTSecret),
 		routeH: routing.NewHandler(router),
 		geoH:   geocoding.NewHandler(geocoder),
 		upgrader: websocket.Upgrader{
@@ -82,6 +84,7 @@ func (h *Handler) Routes() chi.Router {
 		r.Get("/api/search", h.geoH.Search)
 		r.Get("/api/route", h.routeH.GetRoute)
 		r.Get("/api/trip/{groupID}", h.GetActiveTrip)
+		r.Get("/api/groups/{groupID}/messages", h.GetGroupMessages)
 		r.Get("/ws/{groupID}", h.ServeWs)
 	})
 
@@ -152,6 +155,16 @@ func (h *Handler) ServeWs(w http.ResponseWriter, r *http.Request) {
 	if len(groupID) > 64 {
 		apierr.Render(w, http.StatusBadRequest, "INVALID_GROUP_ID", "groupID too long")
 		return
+	}
+
+	if h.hub.Store != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := h.hub.Store.UpsertRoomMember(ctx, groupID, userID, userID); err != nil {
+			slog.Error("Failed to join room", "user", userID, "group", groupID, "error", err)
+			apierr.Render(w, http.StatusInternalServerError, "JOIN_ROOM_FAILED", "Could not join room")
+			return
+		}
 	}
 
 	conn, err := h.upgrader.Upgrade(w, r, nil)

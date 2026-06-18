@@ -199,3 +199,124 @@ func (s *PostgresStore) UpdateTripParticipants(ctx context.Context, tripID strin
 	`, participantsJSON, tripID)
 	return err
 }
+
+// UpsertRoomMember records that a user has joined a room and refreshes presence metadata.
+func (s *PostgresStore) UpsertRoomMember(ctx context.Context, groupID, userID, username string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO users (id, name)
+		VALUES ($1, $2)
+		ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
+	`, userID, username); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO room_members (group_id, user_id, username)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (group_id, user_id)
+		DO UPDATE SET username = EXCLUDED.username, last_seen_at = NOW()
+	`, groupID, userID, username); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// IsRoomMember reports whether a user has joined a room.
+func (s *PostgresStore) IsRoomMember(ctx context.Context, groupID, userID string) (bool, error) {
+	var exists bool
+	err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM room_members
+			WHERE group_id = $1 AND user_id = $2
+		)
+	`, groupID, userID).Scan(&exists)
+	return exists, err
+}
+
+// CreateChatMessage stores a durable room chat message.
+func (s *PostgresStore) CreateChatMessage(ctx context.Context, msg *model.ChatMessage) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO chat_messages (
+			id, client_message_id, group_id, user_id, username, text, kind, timestamp_ms
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	`, msg.MessageID, nullString(msg.ClientMessageID), msg.GroupID, msg.UserID, msg.Username, msg.Text, msg.Kind, msg.Timestamp)
+	return err
+}
+
+// ListChatMessages returns room messages oldest-to-newest, with optional timestamp pagination.
+func (s *PostgresStore) ListChatMessages(ctx context.Context, groupID string, limit int, before int64) ([]model.ChatMessage, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if before > 0 {
+		rows, err = s.db.QueryContext(ctx, `
+			SELECT id, COALESCE(client_message_id, ''), group_id, user_id, username, text, kind, timestamp_ms
+			FROM (
+				SELECT id, client_message_id, group_id, user_id, username, text, kind, timestamp_ms
+				FROM chat_messages
+				WHERE group_id = $1 AND timestamp_ms < $2
+				ORDER BY timestamp_ms DESC, created_at DESC
+				LIMIT $3
+			) recent
+			ORDER BY timestamp_ms ASC
+		`, groupID, before, limit)
+	} else {
+		rows, err = s.db.QueryContext(ctx, `
+			SELECT id, COALESCE(client_message_id, ''), group_id, user_id, username, text, kind, timestamp_ms
+			FROM (
+				SELECT id, client_message_id, group_id, user_id, username, text, kind, timestamp_ms
+				FROM chat_messages
+				WHERE group_id = $1
+				ORDER BY timestamp_ms DESC, created_at DESC
+				LIMIT $2
+			) recent
+			ORDER BY timestamp_ms ASC
+		`, groupID, limit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	messages := make([]model.ChatMessage, 0, limit)
+	for rows.Next() {
+		var msg model.ChatMessage
+		if err := rows.Scan(
+			&msg.MessageID,
+			&msg.ClientMessageID,
+			&msg.GroupID,
+			&msg.UserID,
+			&msg.Username,
+			&msg.Text,
+			&msg.Kind,
+			&msg.Timestamp,
+		); err != nil {
+			return nil, err
+		}
+		messages = append(messages, msg)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return messages, nil
+}
+
+func nullString(value string) sql.NullString {
+	if value == "" {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: value, Valid: true}
+}
