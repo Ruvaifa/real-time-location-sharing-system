@@ -122,10 +122,18 @@ If running locally without Docker, you'll also need Postgres and the migrations 
 
 ## Architecture
 
+### Real-Time Location Tracking
 - **Go Channel Concurrency**: The backend uses idiomatic Go channels and a centralized select loop in the Hub to safely register users, manage groups, and broadcast coordinates — no mutexes needed.
 - **In-Memory Caching**: The server caches the last known position of every user. Late joiners get all active markers replayed automatically.
 - **Server-Trusted Identity**: The backend overwrites `userID`, `groupID`, and `timestamp` from the authenticated socket, never from the raw payload — preventing spoofing.
 - **Rate Limiting**: Each client is rate-limited to prevent abuse (configurable via `MAX_MSG_RATE`).
 - **Input Validation**: Coordinates are bounds-checked, names are length-capped, and NaN/Inf values are rejected before broadcast.
+
+### Real-Time Chat & Media Architecture
+- **Hybrid Communication Pipeline**: Combines a REST API with persistent WebSockets. Text messages are dispatched directly over WebSockets, whereas images are uploaded via a multipart HTTP REST API and broadcasted as WebSocket JSON events containing the server-hosted media URL.
+- **Secure Media Storage & Sniffing**: The REST upload endpoint protects the host system by sniffing content headers using `http.DetectContentType` to enforce image-only payloads (JPEG, PNG, GIF, WEBP), applying standard file size limits, and storing files locally using cryptographically randomized hex names to prevent directory traversal.
+- **Optimistic Rendering & Synchronization**: The React app immediately renders outbound messages locally with a `sending` status. Once the Go WebSocket server writes the message to Postgres and broadcasts it back, the client matches the client-side ID to transition the status to `sent`.
+- **Chronological History Replay**: Message history is persisted inside PostgreSQL. Upon entering a group, the client asynchronously fetches room history via HTTP, sorts the records, and renders the initial feed before connecting to the WebSocket stream.
+
 
 

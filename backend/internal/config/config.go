@@ -28,6 +28,9 @@ type Config struct {
 	NominatimBaseURL  string
 	RoutingCacheTTL   int // minutes
 	GeocodingCacheTTL int // minutes
+
+	UploadDir     string
+	MaxUploadSize int // in bytes
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -53,6 +56,9 @@ func Load() *Config {
 		NominatimBaseURL:  envOrDefault("NOMINATIM_BASE_URL", "https://nominatim.openstreetmap.org"),
 		RoutingCacheTTL:   envOrDefaultInt("ROUTING_CACHE_TTL", 1440),
 		GeocodingCacheTTL: envOrDefaultInt("GEOCODING_CACHE_TTL", 60),
+
+		UploadDir:     envOrDefault("UPLOAD_DIR", "./uploads"),
+		MaxUploadSize: envOrDefaultInt("MAX_UPLOAD_SIZE", 5242880), // 5MB default
 	}
 
 	// Clean origins

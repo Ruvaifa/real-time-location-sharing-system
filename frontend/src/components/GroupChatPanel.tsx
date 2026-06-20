@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown, MessageSquare, Send } from "lucide-react";
+import { ChevronDown, Image, MessageSquare, Send, X } from "lucide-react";
 
 import { chatMessageKey, fetchGroupChatHistory, normalizeChatMessage, type ChatMessage } from "../lib/chat";
 import { sendWsMessage, useAppStore } from "../store/useAppStore";
@@ -31,8 +31,12 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
 
   const [draft, setDraft] = useState("");
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [isUploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [activeLightboxImage, setActiveLightboxImage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const loadedGroupRef = useRef<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
@@ -104,7 +108,73 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [chatMessages.length, isOpen]);
 
-  const canSend = Boolean(draft.trim()) && ws?.readyState === WebSocket.OPEN;
+  const canSend = Boolean(draft.trim()) && ws?.readyState === WebSocket.OPEN && !isUploading;
+
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !groupId) return;
+
+    setUploadError(null);
+    setUploading(true);
+
+    const formData = new FormData();
+    formData.append("image", file);
+
+    try {
+      const response = await fetch(`/api/groups/${encodeURIComponent(groupId)}/chat/upload`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.message || "Failed to upload image");
+      }
+
+      const data = await response.json();
+      const mediaURL = data.url;
+
+      const caption = draft.trim();
+      const clientMessageId = `client-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const optimistic = normalizeChatMessage({
+        messageID: clientMessageId,
+        clientMessageId,
+        groupID: groupId,
+        userID: username,
+        username,
+        text: caption,
+        mediaURL,
+        timestamp: Date.now(),
+        kind: "image",
+        status: "sending",
+      });
+
+      if (optimistic) {
+        appendChatMessage(optimistic);
+      }
+
+      sendWsMessage("chat_message", {
+        clientMessageId,
+        text: caption,
+        mediaURL,
+        kind: "image",
+      });
+
+      setDraft("");
+    } catch (err: any) {
+      setUploadError(err.message || "Failed to upload image");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
 
   const handleSend = () => {
     const text = draft.trim();
@@ -208,7 +278,17 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
                       <span className="chat-message-author">{isSelf ? "You" : message.username}</span>
                       <span className="chat-message-time">{formatTime(message.timestamp)}</span>
                     </div>
-                    <p className="chat-message-text">{message.text}</p>
+                    {message.kind === "image" && message.mediaURL && (
+                      <div className="chat-message-image-container">
+                        <img
+                          src={message.mediaURL}
+                          alt="Uploaded content"
+                          className="chat-message-image"
+                          onClick={() => setActiveLightboxImage(message.mediaURL || null)}
+                        />
+                      </div>
+                    )}
+                    {message.text && <p className="chat-message-text">{message.text}</p>}
                     {isSelf && (
                       <div className="chat-message-foot">
                         <span className={`chat-message-status ${message.status === "sending" ? "sending" : "sent"}`}>
@@ -227,7 +307,13 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
             <textarea
               className="chat-input"
               rows={2}
-              placeholder={ws?.readyState === WebSocket.OPEN ? "Write a message to the group..." : "Connecting to chat..."}
+              placeholder={
+                ws?.readyState === WebSocket.OPEN
+                  ? isUploading
+                    ? "Uploading image..."
+                    : "Write a message to the group..."
+                  : "Connecting to chat..."
+              }
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
@@ -236,10 +322,37 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
                   if (canSend) handleSend();
                 }
               }}
-              disabled={ws?.readyState !== WebSocket.OPEN}
+              disabled={ws?.readyState !== WebSocket.OPEN || isUploading}
             />
             <div className="chat-composer-footer">
-              <button className="chat-send-btn" type="button" onClick={handleSend} disabled={!canSend}>
+              <input
+                type="file"
+                ref={fileInputRef}
+                style={{ display: "none" }}
+                accept="image/*"
+                onChange={handleFileChange}
+                disabled={ws?.readyState !== WebSocket.OPEN || isUploading}
+              />
+              {uploadError && (
+                <span className="chat-upload-error">
+                  {uploadError}
+                </span>
+              )}
+              {isUploading && (
+                <span className="chat-upload-status">
+                  Uploading...
+                </span>
+              )}
+              <button
+                className="chat-attach-btn"
+                type="button"
+                onClick={handleUploadClick}
+                disabled={ws?.readyState !== WebSocket.OPEN || isUploading}
+                title="Upload image"
+              >
+                <Image size={14} />
+              </button>
+              <button className="chat-send-btn" type="button" onClick={handleSend} disabled={!canSend || isUploading}>
                 <Send size={14} />
                 Send
               </button>
@@ -247,6 +360,35 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
           </div>
         </motion.aside>
       )}
+      {/* Lightbox Modal */}
+      <AnimatePresence>
+        {activeLightboxImage && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="chat-lightbox-backdrop"
+            onClick={() => setActiveLightboxImage(null)}
+          >
+            <button
+              className="chat-lightbox-close"
+              onClick={() => setActiveLightboxImage(null)}
+              aria-label="Close image preview"
+            >
+              <X size={20} />
+            </button>
+            <motion.img
+              initial={{ scale: 0.95 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.95 }}
+              src={activeLightboxImage}
+              alt="Preview"
+              className="chat-lightbox-img"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </AnimatePresence>
   );
 }

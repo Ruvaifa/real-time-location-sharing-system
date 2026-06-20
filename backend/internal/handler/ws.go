@@ -5,6 +5,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -73,6 +74,19 @@ func (h *Handler) Routes() chi.Router {
 	r.Use(appmw.CORS(h.cfg.AllowedOrigins))
 	r.Use(appmw.RateLimit(h.generalLimiter))
 
+	// Serve uploaded static files
+	uploadDir := h.cfg.UploadDir
+	if uploadDir == "" {
+		uploadDir = "./uploads"
+	}
+	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
+		if err := os.MkdirAll(uploadDir, 0755); err != nil {
+			slog.Error("Failed to create upload directory", "path", uploadDir, "error", err)
+		}
+	}
+	fileServer := http.FileServer(http.Dir(uploadDir))
+	r.Handle("/uploads/*", http.StripPrefix("/uploads/", fileServer))
+
 	// Public routes
 	r.With(appmw.RateLimit(h.loginLimiter)).Post("/login", h.Login)
 	r.Get("/health", h.Health)
@@ -85,6 +99,7 @@ func (h *Handler) Routes() chi.Router {
 		r.Get("/api/route", h.routeH.GetRoute)
 		r.Get("/api/trip/{groupID}", h.GetActiveTrip)
 		r.Get("/api/groups/{groupID}/messages", h.GetGroupMessages)
+		r.Post("/api/groups/{groupID}/chat/upload", h.UploadImage)
 		r.Get("/ws/{groupID}", h.ServeWs)
 	})
 

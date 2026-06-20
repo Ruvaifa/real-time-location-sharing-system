@@ -8,6 +8,7 @@ type ChatMessage struct {
 	UserID          string `json:"userID"`
 	Username        string `json:"username"`
 	Text            string `json:"text"`
+	MediaURL        string `json:"mediaURL,omitempty"`
 	Kind            string `json:"kind"`
 	Timestamp       int64  `json:"timestamp"`
 }
@@ -15,4 +16,5 @@ type ChatMessage struct {
 const (
 	ChatKindText   = "text"
 	ChatKindSystem = "system"
+	ChatKindImage  = "image"
 )

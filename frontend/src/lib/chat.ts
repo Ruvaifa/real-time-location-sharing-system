@@ -1,4 +1,4 @@
-export type ChatMessageKind = "text" | "system";
+export type ChatMessageKind = "text" | "system" | "image";
 export type ChatMessageStatus = "sending" | "sent" | "failed";
 
 export interface ChatMessage {
@@ -8,6 +8,7 @@ export interface ChatMessage {
   userID: string;
   username: string;
   text: string;
+  mediaURL?: string;
   timestamp: number;
   kind?: ChatMessageKind;
   status?: ChatMessageStatus;
@@ -40,8 +41,9 @@ export function normalizeChatMessage(input: unknown): ChatMessage | null {
   const data = input as Record<string, unknown>;
   const kind = stringValue(data.kind, "text") as ChatMessageKind;
   const text = stringValue(data.text).trim();
+  const mediaURL = stringValue(data.mediaURL || data.media_url || data.mediaUrl);
 
-  if (kind !== "system" && !text) return null;
+  if (kind !== "system" && !text && !mediaURL) return null;
 
   const clientMessageId = stringValue(data.clientMessageId || data.client_message_id);
   const messageID = stringValue(
@@ -56,6 +58,7 @@ export function normalizeChatMessage(input: unknown): ChatMessage | null {
     userID: stringValue(data.userID || data.userId || data.user_id),
     username: stringValue(data.username || data.user_name || data.name),
     text,
+    mediaURL: mediaURL || undefined,
     timestamp: numberValue(data.timestamp || data.timestamp_ms),
     kind,
     status:

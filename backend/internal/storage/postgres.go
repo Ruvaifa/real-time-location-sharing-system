@@ -244,10 +244,10 @@ func (s *PostgresStore) IsRoomMember(ctx context.Context, groupID, userID string
 func (s *PostgresStore) CreateChatMessage(ctx context.Context, msg *model.ChatMessage) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO chat_messages (
-			id, client_message_id, group_id, user_id, username, text, kind, timestamp_ms
+			id, client_message_id, group_id, user_id, username, text, media_url, kind, timestamp_ms
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-	`, msg.MessageID, nullString(msg.ClientMessageID), msg.GroupID, msg.UserID, msg.Username, msg.Text, msg.Kind, msg.Timestamp)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	`, msg.MessageID, nullString(msg.ClientMessageID), msg.GroupID, msg.UserID, msg.Username, msg.Text, nullString(msg.MediaURL), msg.Kind, msg.Timestamp)
 	return err
 }
 
@@ -263,9 +263,9 @@ func (s *PostgresStore) ListChatMessages(ctx context.Context, groupID string, li
 	)
 	if before > 0 {
 		rows, err = s.db.QueryContext(ctx, `
-			SELECT id, COALESCE(client_message_id, ''), group_id, user_id, username, text, kind, timestamp_ms
+			SELECT id, COALESCE(client_message_id, ''), group_id, user_id, username, text, COALESCE(media_url, ''), kind, timestamp_ms
 			FROM (
-				SELECT id, client_message_id, group_id, user_id, username, text, kind, timestamp_ms
+				SELECT id, client_message_id, group_id, user_id, username, text, media_url, kind, timestamp_ms
 				FROM chat_messages
 				WHERE group_id = $1 AND timestamp_ms < $2
 				ORDER BY timestamp_ms DESC, created_at DESC
@@ -275,9 +275,9 @@ func (s *PostgresStore) ListChatMessages(ctx context.Context, groupID string, li
 		`, groupID, before, limit)
 	} else {
 		rows, err = s.db.QueryContext(ctx, `
-			SELECT id, COALESCE(client_message_id, ''), group_id, user_id, username, text, kind, timestamp_ms
+			SELECT id, COALESCE(client_message_id, ''), group_id, user_id, username, text, COALESCE(media_url, ''), kind, timestamp_ms
 			FROM (
-				SELECT id, client_message_id, group_id, user_id, username, text, kind, timestamp_ms
+				SELECT id, client_message_id, group_id, user_id, username, text, media_url, kind, timestamp_ms
 				FROM chat_messages
 				WHERE group_id = $1
 				ORDER BY timestamp_ms DESC, created_at DESC
@@ -301,6 +301,7 @@ func (s *PostgresStore) ListChatMessages(ctx context.Context, groupID string, li
 			&msg.UserID,
 			&msg.Username,
 			&msg.Text,
+			&msg.MediaURL,
 			&msg.Kind,
 			&msg.Timestamp,
 		); err != nil {

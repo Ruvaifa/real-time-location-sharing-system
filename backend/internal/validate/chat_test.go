@@ -41,6 +41,33 @@ func TestChatMessageValidation(t *testing.T) {
 			msg:     model.ChatMessage{Text: "hello", ClientMessageID: strings.Repeat("a", MaxClientMessageIDLen+1)},
 			wantErr: true,
 		},
+		{
+			name:     "valid image message with caption",
+			msg:      model.ChatMessage{Text: "  caption  ", Kind: model.ChatKindImage, MediaURL: "  /uploads/1.jpg  "},
+			wantTxt:  "caption",
+			wantKind: model.ChatKindImage,
+		},
+		{
+			name:     "valid image message without caption",
+			msg:      model.ChatMessage{Kind: model.ChatKindImage, MediaURL: "/uploads/1.jpg"},
+			wantTxt:  "",
+			wantKind: model.ChatKindImage,
+		},
+		{
+			name:    "image kind missing media url rejected",
+			msg:     model.ChatMessage{Kind: model.ChatKindImage, Text: "caption"},
+			wantErr: true,
+		},
+		{
+			name:    "image kind long media url rejected",
+			msg:     model.ChatMessage{Kind: model.ChatKindImage, MediaURL: strings.Repeat("a", 2049)},
+			wantErr: true,
+		},
+		{
+			name:    "original long client message id rejected duplicate placeholder for lines shifting",
+			msg:     model.ChatMessage{Text: "hello", ClientMessageID: strings.Repeat("a", MaxClientMessageIDLen+1)},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
