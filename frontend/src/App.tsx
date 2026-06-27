@@ -1399,7 +1399,7 @@ function MapScreen() {
                     <MapRoute
                       id="preview-route"
                       coordinates={routePreview.coordinates.map(([lat, lng]) => [lng, lat] as [number, number])}
-                      color={routePreview.isSos ? "var(--status-bad)" : ROUTE_COLOR}
+                      color={routePreview.isSos ? "#EF4444" : ROUTE_COLOR}
                       width={5}
                       opacity={routePreview.isSos ? 0.95 : 0.8}
                       interactive={false}
