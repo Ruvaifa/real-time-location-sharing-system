@@ -506,12 +506,51 @@ func (h *Hub) handleChatMessage(sender *Client, payload json.RawMessage) {
 		slog.Error("Failed to refresh room membership before chat persist", "user", sender.UserID, "group", sender.GroupID, "error", err)
 		return
 	}
+
+	if msg.RecipientID != "" {
+		isRecipientMember, err := h.Store.IsRoomMember(ctx, sender.GroupID, msg.RecipientID)
+		if err != nil || !isRecipientMember {
+			slog.Warn("Recipient not in room", "user", sender.UserID, "recipient", msg.RecipientID)
+			return
+		}
+	}
+
 	if err := h.Store.CreateChatMessage(ctx, &msg); err != nil {
 		slog.Error("Failed to persist chat message", "user", sender.UserID, "group", sender.GroupID, "error", err)
 		return
 	}
 
-	h.broadcastToGroup(sender.GroupID, model.MsgTypeChatMessage, msg, nil)
+	if msg.RecipientID != "" {
+		h.sendPrivateMessage(sender.GroupID, sender.UserID, msg.RecipientID, model.MsgTypeChatMessage, msg)
+	} else {
+		h.broadcastToGroup(sender.GroupID, model.MsgTypeChatMessage, msg, nil)
+	}
+}
+
+func (h *Hub) sendPrivateMessage(groupID, senderID, recipientID, msgType string, data interface{}) {
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return
+	}
+	wrapped := model.Envelope{Type: msgType, Payload: raw}
+	wrappedBytes, err := json.Marshal(wrapped)
+	if err != nil {
+		return
+	}
+
+	group, ok := h.groups[groupID]
+	if !ok {
+		return
+	}
+
+	for client := range group {
+		if client.UserID == senderID || client.UserID == recipientID {
+			select {
+			case client.Send <- wrappedBytes:
+			default:
+			}
+		}
+	}
 }
 
 func (h *Hub) broadcastToGroup(groupID, msgType string, data interface{}, exclude *Client) {

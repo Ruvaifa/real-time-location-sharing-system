@@ -22,6 +22,7 @@ type Store interface {
 	IsRoomMember(ctx context.Context, groupID, userID string) (bool, error)
 	CreateChatMessage(ctx context.Context, msg *model.ChatMessage) error
 	ListChatMessages(ctx context.Context, groupID string, limit int, before int64) ([]model.ChatMessage, error)
+	ListPrivateChatMessages(ctx context.Context, groupID, userA, userB string, limit int, before int64) ([]model.ChatMessage, error)
 
 	Ping(ctx context.Context) error
 	Close() error

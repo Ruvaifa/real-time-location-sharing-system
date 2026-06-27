@@ -40,6 +40,11 @@ func (f *fakeChatStore) ListChatMessages(_ context.Context, _ string, limit int,
 	f.before = before
 	return f.messages, nil
 }
+func (f *fakeChatStore) ListPrivateChatMessages(_ context.Context, _ string, _, _ string, limit int, before int64) ([]model.ChatMessage, error) {
+	f.limit = limit
+	f.before = before
+	return f.messages, nil
+}
 func (f *fakeChatStore) Ping(context.Context) error { return nil }
 func (f *fakeChatStore) Close() error               { return nil }
 

@@ -36,6 +36,8 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
   const [activeLightboxImage, setActiveLightboxImage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const loadedGroupRef = useRef<string | null>(null);
+  const loadedTargetRef = useRef<string | null>(null);
+  const [activeChatTarget, setActiveChatTarget] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [tick, setTick] = useState(0);
 
@@ -79,20 +81,23 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
   }, [location, peers, trip?.participants, username, tick]);
 
   useEffect(() => {
-    if (!groupId || !token || loadedGroupRef.current === groupId) return;
+    if (!groupId || !token) return;
+    if (loadedGroupRef.current === groupId && loadedTargetRef.current === activeChatTarget) return;
 
     let cancelled = false;
     setLoadingHistory(true);
 
-    fetchGroupChatHistory(groupId, token)
+    fetchGroupChatHistory(groupId, token, activeChatTarget || undefined)
       .then((messages) => {
         if (cancelled) return;
         setChatMessages(messages);
         loadedGroupRef.current = groupId;
+        loadedTargetRef.current = activeChatTarget;
       })
       .catch(() => {
         if (!cancelled) {
           loadedGroupRef.current = groupId;
+          loadedTargetRef.current = activeChatTarget;
         }
       })
       .finally(() => {
@@ -102,11 +107,23 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
     return () => {
       cancelled = true;
     };
-  }, [groupId, token, setChatMessages]);
+  }, [groupId, token, activeChatTarget, setChatMessages]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [chatMessages.length, isOpen]);
+  }, [chatMessages.length, isOpen, activeChatTarget]);
+
+  const displayedMessages = useMemo(() => {
+    return chatMessages.filter((msg) => {
+      if (activeChatTarget === null) {
+        return !msg.recipientID;
+      }
+      return (
+        msg.recipientID === activeChatTarget ||
+        (msg.userID === activeChatTarget && msg.recipientID === username)
+      );
+    });
+  }, [chatMessages, activeChatTarget, username]);
 
   const canSend = Boolean(draft.trim()) && ws?.readyState === WebSocket.OPEN && !isUploading;
 
@@ -152,6 +169,7 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
         timestamp: Date.now(),
         kind: "image",
         status: "sending",
+        recipientID: activeChatTarget || undefined,
       });
 
       if (optimistic) {
@@ -163,6 +181,7 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
         text: caption,
         mediaURL,
         kind: "image",
+        recipientID: activeChatTarget || undefined,
       });
 
       setDraft("");
@@ -191,6 +210,7 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
       timestamp: Date.now(),
       kind: "text",
       status: "sending",
+      recipientID: activeChatTarget || undefined,
     });
 
     if (optimistic) {
@@ -201,6 +221,7 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
       clientMessageId,
       text,
       kind: "text",
+      recipientID: activeChatTarget || undefined,
     });
 
     setDraft("");
@@ -220,7 +241,7 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
             <div className="chat-panel-title">
               <div className="chat-panel-kicker">
                 <MessageSquare size={14} />
-                <span>Group Chat</span>
+                <span>{activeChatTarget ? `Chat with ${activeChatTarget}` : "Group Chat"}</span>
               </div>
               <div className="chat-panel-meta">
                 <span>{groupId || "No room selected"}</span>
@@ -233,18 +254,43 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
             </button>
           </div>
 
+          <div className="chat-channels-bar">
+            <button
+              className={`chat-channel-btn ${activeChatTarget === null ? "active" : ""}`}
+              onClick={() => {
+                setActiveChatTarget(null);
+                setChatMessages([]);
+              }}
+            >
+              Group
+            </button>
+            {onlineMembers.filter(m => m.id !== username).map((member) => (
+              <button
+                key={member.id}
+                className={`chat-channel-btn ${activeChatTarget === member.id ? "active" : ""} ${member.online ? "online" : "offline"}`}
+                onClick={() => {
+                  setActiveChatTarget(member.id);
+                  setChatMessages([]);
+                }}
+              >
+                <span className="chat-channel-dot" />
+                {member.name}
+              </button>
+            ))}
+          </div>
+
           <div className="chat-panel-body">
-            {loadingHistory && chatMessages.length === 0 && (
+            {loadingHistory && displayedMessages.length === 0 && (
               <div className="chat-empty-state">
                 <div className="chat-empty-logo" aria-hidden="true">
                   <span className="chat-empty-ring" />
                   <MessageSquare size={16} />
                 </div>
-                <span>Loading room history...</span>
+                <span>Loading chat history...</span>
               </div>
             )}
 
-            {!loadingHistory && chatMessages.length === 0 && (
+            {!loadingHistory && displayedMessages.length === 0 && (
               <div className="chat-empty-state">
                 <div className="chat-empty-logo" aria-hidden="true">
                   <span className="chat-empty-ring" />
@@ -252,12 +298,16 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
                 </div>
                 <div>
                   <strong>No messages yet</strong>
-                  <p>Say hello to the group and start the conversation.</p>
+                  <p>
+                    {activeChatTarget
+                      ? `Send a private message to ${activeChatTarget} to start the conversation.`
+                      : "Say hello to the group and start the conversation."}
+                  </p>
                 </div>
               </div>
             )}
 
-            {chatMessages.map((message: ChatMessage) => {
+            {displayedMessages.map((message: ChatMessage) => {
               const isSelf = message.userID === username;
 
               if (message.kind === "system") {
@@ -311,7 +361,9 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
                 ws?.readyState === WebSocket.OPEN
                   ? isUploading
                     ? "Uploading image..."
-                    : "Write a message to the group..."
+                    : activeChatTarget
+                      ? `Write a private message to ${activeChatTarget}...`
+                      : "Write a message to the group..."
                   : "Connecting to chat..."
               }
               value={draft}

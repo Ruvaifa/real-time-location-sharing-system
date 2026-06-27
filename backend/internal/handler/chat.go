@@ -83,7 +83,29 @@ func (h *Handler) GetGroupMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	messages, err := h.hub.Store.ListChatMessages(r.Context(), groupID, limit, before)
+	recipientID := r.URL.Query().Get("recipientID")
+	var messages []model.ChatMessage
+
+	if recipientID != "" {
+		if recipientID == userID {
+			apierr.Render(w, http.StatusBadRequest, "INVALID_RECIPIENT", "cannot fetch private messages with yourself")
+			return
+		}
+		isRecipientMember, err := h.hub.Store.IsRoomMember(r.Context(), groupID, recipientID)
+		if err != nil {
+			slog.Error("Failed to check recipient room membership", "group", groupID, "recipient", recipientID, "error", err)
+			apierr.Render(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not fetch messages")
+			return
+		}
+		if !isRecipientMember {
+			apierr.Render(w, http.StatusForbidden, "RECIPIENT_NOT_MEMBER", "Recipient is not a member of this room")
+			return
+		}
+		messages, err = h.hub.Store.ListPrivateChatMessages(r.Context(), groupID, userID, recipientID, limit, before)
+	} else {
+		messages, err = h.hub.Store.ListChatMessages(r.Context(), groupID, limit, before)
+	}
+
 	if err != nil {
 		slog.Error("Failed to list chat messages", "group", groupID, "user", userID, "error", err)
 		apierr.Render(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not fetch messages")

@@ -46,5 +46,13 @@ func ChatMessage(msg *model.ChatMessage) error {
 	if len(msg.ClientMessageID) > MaxClientMessageIDLen {
 		return errors.New("client_message_id exceeds max length")
 	}
+	if msg.RecipientID != "" {
+		if len(msg.RecipientID) > 64 {
+			return errors.New("recipientID exceeds max length")
+		}
+		if msg.RecipientID == msg.UserID {
+			return errors.New("cannot send private message to yourself")
+		}
+	}
 	return nil
 }

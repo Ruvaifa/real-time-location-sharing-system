@@ -12,6 +12,7 @@ export interface ChatMessage {
   timestamp: number;
   kind?: ChatMessageKind;
   status?: ChatMessageStatus;
+  recipientID?: string;
 }
 
 type HistoryResponse = {
@@ -65,13 +66,18 @@ export function normalizeChatMessage(input: unknown): ChatMessage | null {
       data.status === "sending" || data.status === "sent" || data.status === "failed"
         ? data.status
         : undefined,
+    recipientID: stringValue(data.recipientID || data.recipientId || data.recipient_id) || undefined,
   };
 }
 
-export async function fetchGroupChatHistory(groupID: string, token: string): Promise<ChatMessage[]> {
+export async function fetchGroupChatHistory(groupID: string, token: string, recipientID?: string): Promise<ChatMessage[]> {
   if (!groupID) return [];
 
-  const response = await fetch(`/api/groups/${encodeURIComponent(groupID)}/messages`, {
+  let url = `/api/groups/${encodeURIComponent(groupID)}/messages`;
+  if (recipientID) {
+    url += `?recipientID=${encodeURIComponent(recipientID)}`;
+  }
+  const response = await fetch(url, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
 

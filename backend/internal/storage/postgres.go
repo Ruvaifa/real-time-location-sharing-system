@@ -244,10 +244,10 @@ func (s *PostgresStore) IsRoomMember(ctx context.Context, groupID, userID string
 func (s *PostgresStore) CreateChatMessage(ctx context.Context, msg *model.ChatMessage) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO chat_messages (
-			id, client_message_id, group_id, user_id, username, text, media_url, kind, timestamp_ms
+			id, client_message_id, group_id, user_id, username, text, media_url, kind, timestamp_ms, recipient_id
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-	`, msg.MessageID, nullString(msg.ClientMessageID), msg.GroupID, msg.UserID, msg.Username, msg.Text, nullString(msg.MediaURL), msg.Kind, msg.Timestamp)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	`, msg.MessageID, nullString(msg.ClientMessageID), msg.GroupID, msg.UserID, msg.Username, msg.Text, nullString(msg.MediaURL), msg.Kind, msg.Timestamp, nullString(msg.RecipientID))
 	return err
 }
 
@@ -263,11 +263,11 @@ func (s *PostgresStore) ListChatMessages(ctx context.Context, groupID string, li
 	)
 	if before > 0 {
 		rows, err = s.db.QueryContext(ctx, `
-			SELECT id, COALESCE(client_message_id, ''), group_id, user_id, username, text, COALESCE(media_url, ''), kind, timestamp_ms
+			SELECT id, COALESCE(client_message_id, ''), group_id, user_id, username, text, COALESCE(media_url, ''), kind, timestamp_ms, COALESCE(recipient_id, '')
 			FROM (
-				SELECT id, client_message_id, group_id, user_id, username, text, media_url, kind, timestamp_ms
+				SELECT id, client_message_id, group_id, user_id, username, text, media_url, kind, timestamp_ms, recipient_id
 				FROM chat_messages
-				WHERE group_id = $1 AND timestamp_ms < $2
+				WHERE group_id = $1 AND recipient_id IS NULL AND timestamp_ms < $2
 				ORDER BY timestamp_ms DESC, created_at DESC
 				LIMIT $3
 			) recent
@@ -275,11 +275,11 @@ func (s *PostgresStore) ListChatMessages(ctx context.Context, groupID string, li
 		`, groupID, before, limit)
 	} else {
 		rows, err = s.db.QueryContext(ctx, `
-			SELECT id, COALESCE(client_message_id, ''), group_id, user_id, username, text, COALESCE(media_url, ''), kind, timestamp_ms
+			SELECT id, COALESCE(client_message_id, ''), group_id, user_id, username, text, COALESCE(media_url, ''), kind, timestamp_ms, COALESCE(recipient_id, '')
 			FROM (
-				SELECT id, client_message_id, group_id, user_id, username, text, media_url, kind, timestamp_ms
+				SELECT id, client_message_id, group_id, user_id, username, text, media_url, kind, timestamp_ms, recipient_id
 				FROM chat_messages
-				WHERE group_id = $1
+				WHERE group_id = $1 AND recipient_id IS NULL
 				ORDER BY timestamp_ms DESC, created_at DESC
 				LIMIT $2
 			) recent
@@ -304,6 +304,75 @@ func (s *PostgresStore) ListChatMessages(ctx context.Context, groupID string, li
 			&msg.MediaURL,
 			&msg.Kind,
 			&msg.Timestamp,
+			&msg.RecipientID,
+		); err != nil {
+			return nil, err
+		}
+		messages = append(messages, msg)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return messages, nil
+}
+
+// ListPrivateChatMessages returns private chat messages between two users in a room oldest-to-newest.
+func (s *PostgresStore) ListPrivateChatMessages(ctx context.Context, groupID, userA, userB string, limit int, before int64) ([]model.ChatMessage, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if before > 0 {
+		rows, err = s.db.QueryContext(ctx, `
+			SELECT id, COALESCE(client_message_id, ''), group_id, user_id, username, text, COALESCE(media_url, ''), kind, timestamp_ms, COALESCE(recipient_id, '')
+			FROM (
+				SELECT id, client_message_id, group_id, user_id, username, text, media_url, kind, timestamp_ms, recipient_id
+				FROM chat_messages
+				WHERE group_id = $1 
+				  AND ((user_id = $2 AND recipient_id = $3) OR (user_id = $3 AND recipient_id = $2))
+				  AND timestamp_ms < $4
+				ORDER BY timestamp_ms DESC, created_at DESC
+				LIMIT $5
+			) recent
+			ORDER BY timestamp_ms ASC
+		`, groupID, userA, userB, before, limit)
+	} else {
+		rows, err = s.db.QueryContext(ctx, `
+			SELECT id, COALESCE(client_message_id, ''), group_id, user_id, username, text, COALESCE(media_url, ''), kind, timestamp_ms, COALESCE(recipient_id, '')
+			FROM (
+				SELECT id, client_message_id, group_id, user_id, username, text, media_url, kind, timestamp_ms, recipient_id
+				FROM chat_messages
+				WHERE group_id = $1
+				  AND ((user_id = $2 AND recipient_id = $3) OR (user_id = $3 AND recipient_id = $2))
+				  ORDER BY timestamp_ms DESC, created_at DESC
+				LIMIT $4
+			) recent
+			ORDER BY timestamp_ms ASC
+		`, groupID, userA, userB, limit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	messages := make([]model.ChatMessage, 0, limit)
+	for rows.Next() {
+		var msg model.ChatMessage
+		if err := rows.Scan(
+			&msg.MessageID,
+			&msg.ClientMessageID,
+			&msg.GroupID,
+			&msg.UserID,
+			&msg.Username,
+			&msg.Text,
+			&msg.MediaURL,
+			&msg.Kind,
+			&msg.Timestamp,
+			&msg.RecipientID,
 		); err != nil {
 			return nil, err
 		}
