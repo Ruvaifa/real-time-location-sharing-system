@@ -513,6 +513,7 @@ function MapScreen() {
   const fitBounds = useAppStore((state) => state.fitBounds);
   const requestFitBounds = useAppStore((state) => state.requestFitBounds);
   const routePreview = useAppStore((state) => state.routePreview);
+  const setRoutePreview = useAppStore((state) => state.setRoutePreview);
   const alerts = useAppStore((state) => state.alerts);
   const activePeerAlerts = useMemo(() => {
     return Object.values(alerts).filter((a) => a.userID !== username);
@@ -525,6 +526,7 @@ function MapScreen() {
   const [chatOpen, setChatOpen] = useState(true);
   const [mapStyle, setMapStyle] = useState<keyof typeof MAP_STYLES>("dark");
   const [showRoutePicker, setShowRoutePicker] = useState(false);
+  const [locatedPeers, setLocatedPeers] = useState<Record<string, boolean>>({});
   const [routePath, setRoutePath] = useState<LineCoordinate[]>([]);
   const [routePathStatus, setRoutePathStatus] = useState<
     "idle" | "loading" | "ready" | "error"
@@ -576,6 +578,9 @@ function MapScreen() {
     setView("map");
     const peer = peers[peerId];
     if (peer) {
+      if (alerts[peerId]) {
+        setLocatedPeers((prev) => ({ ...prev, [peerId]: true }));
+      }
       setTimeout(() => {
         const map = mapRef.current;
         if (map) {
@@ -587,7 +592,47 @@ function MapScreen() {
         }
       }, 150);
     }
-  }, [peers, setView]);
+  }, [peers, setView, alerts]);
+
+  const handleGetRoute = useCallback(async (peerId: string) => {
+    const peer = peers[peerId];
+    if (!peer || !location) return;
+
+    try {
+      const route = await getRoute(
+        [location.lat, location.lng],
+        [peer.lat, peer.lng]
+      );
+      setRoutePreview({
+        origin: [location.lat, location.lng],
+        dest: [peer.lat, peer.lng],
+        coordinates: route.coordinates,
+        distance: route.distance,
+        duration: route.duration,
+        destName: peer.name || peerId,
+      });
+      requestFitBounds([
+        [location.lat, location.lng],
+        [peer.lat, peer.lng],
+      ]);
+    } catch (err) {
+      console.error("Failed to get route to SOS peer:", err);
+    }
+  }, [peers, location, setRoutePreview, requestFitBounds]);
+
+  useEffect(() => {
+    setLocatedPeers((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const key in next) {
+        if (!alerts[key]) {
+          delete next[key];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [alerts]);
 
   useEffect(() => {
     let isStale = false;
@@ -1110,12 +1155,21 @@ function MapScreen() {
                   <strong>{alert.name || alert.userID}</strong> needs help!
                 </div>
               </div>
-              <button
-                className="sos-banner-cancel"
-                onClick={() => locatePeer(alert.userID)}
-              >
-                Locate
-              </button>
+              {locatedPeers[alert.userID] ? (
+                <button
+                  className="sos-banner-cancel"
+                  onClick={() => handleGetRoute(alert.userID)}
+                >
+                  Get Route
+                </button>
+              ) : (
+                <button
+                  className="sos-banner-cancel"
+                  onClick={() => locatePeer(alert.userID)}
+                >
+                  Locate
+                </button>
+              )}
             </div>
           ))}
         </div>
