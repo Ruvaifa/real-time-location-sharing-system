@@ -514,7 +514,9 @@ function MapScreen() {
   const requestFitBounds = useAppStore((state) => state.requestFitBounds);
   const routePreview = useAppStore((state) => state.routePreview);
   const alerts = useAppStore((state) => state.alerts);
-  const activeAlerts = useMemo(() => Object.values(alerts), [alerts]);
+  const activePeerAlerts = useMemo(() => {
+    return Object.values(alerts).filter((a) => a.userID !== username);
+  }, [alerts, username]);
   const isSelfAlerting = !!alerts[username];
 
   const ws = useRef<WebSocket | null>(null);
@@ -569,6 +571,23 @@ function MapScreen() {
       alerting: !isSelfAlerting,
     });
   }, [isSelfAlerting]);
+
+  const locatePeer = useCallback((peerId: string) => {
+    setView("map");
+    const peer = peers[peerId];
+    if (peer) {
+      setTimeout(() => {
+        const map = mapRef.current;
+        if (map) {
+          map.flyTo({
+            center: [peer.lng, peer.lat],
+            zoom: Math.max(map.getZoom(), 15),
+            duration: 800,
+          });
+        }
+      }, 150);
+    }
+  }, [peers, setView]);
 
   useEffect(() => {
     let isStale = false;
@@ -1077,6 +1096,30 @@ function MapScreen() {
       className="map-screen"
     >
       <div className="map-glass-texture" />
+
+      {activePeerAlerts.length > 0 && (
+        <div className="sos-banner-container">
+          {activePeerAlerts.map((alert) => (
+            <div key={alert.userID} className="sos-alert-banner">
+              <div className="sos-pulse-ring">
+                <div className="sos-pulse-dot" />
+              </div>
+              <div className="sos-banner-content">
+                <div className="sos-banner-title">Emergency SOS Alert</div>
+                <div className="sos-banner-desc">
+                  <strong>{alert.name || alert.userID}</strong> needs help!
+                </div>
+              </div>
+              <button
+                className="sos-banner-cancel"
+                onClick={() => locatePeer(alert.userID)}
+              >
+                Locate
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {view === "map" && (
         <>
@@ -1588,7 +1631,21 @@ function MapScreen() {
             <span>Active {activePeers + 1}</span>
           </div>
 
-          <div className={`user-item ${isSelfAlerting ? "user-alerting" : ""}`}>
+          <div
+            className={`user-item ${isSelfAlerting ? "user-alerting" : ""}`}
+            onClick={() => {
+              setView("map");
+              setTimeout(() => {
+                const map = mapRef.current;
+                if (location && map) {
+                  map.flyTo({ center: [location.lng, location.lat], zoom: Math.max(map.getZoom(), 15), duration: 800 });
+                  hasPannedRef.current = false;
+                  initialFixDoneRef.current = true;
+                }
+              }, 150);
+            }}
+            style={{ cursor: "pointer" }}
+          >
             <div className="avatar" style={{ backgroundColor: isSelfAlerting ? "var(--status-bad)" : SELF_COLOR }}>{getInitials(username)}</div>
             <div className="user-info">
               <div className="user-name flex items-center gap-2">
@@ -1623,7 +1680,12 @@ function MapScreen() {
             const isPeerAlerting = !!alerts[peerId];
 
             return (
-              <div className={`user-item ${isPeerAlerting ? "user-alerting" : ""}`} key={peerId}>
+              <div
+                className={`user-item ${isPeerAlerting ? "user-alerting" : ""}`}
+                key={peerId}
+                onClick={() => locatePeer(peerId)}
+                style={{ cursor: "pointer" }}
+              >
                 <div className="avatar" style={{ backgroundColor: isPeerAlerting ? "var(--status-bad)" : (isActive ? getHashColor(peerData.name) : "var(--status-muted)") }}>
                   {getInitials(peerData.name)}
                 </div>
