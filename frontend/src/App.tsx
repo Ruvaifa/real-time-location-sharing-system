@@ -610,6 +610,7 @@ function MapScreen() {
         distance: route.distance,
         duration: route.duration,
         destName: peer.name || peerId,
+        isSos: true,
       });
       requestFitBounds([
         [location.lat, location.lng],
@@ -1393,14 +1394,14 @@ function MapScreen() {
                   </>
                 )}
 
-                {routePreview && !trip && routePreview.coordinates.length >= 2 && (
+                {routePreview && (routePreview.isSos || !trip) && routePreview.coordinates.length >= 2 && (
                   <>
                     <MapRoute
                       id="preview-route"
                       coordinates={routePreview.coordinates.map(([lat, lng]) => [lng, lat] as [number, number])}
-                      color={ROUTE_COLOR}
+                      color={routePreview.isSos ? "var(--status-bad)" : ROUTE_COLOR}
                       width={5}
-                      opacity={0.8}
+                      opacity={routePreview.isSos ? 0.95 : 0.8}
                       interactive={false}
                     />
                     <MapMarker

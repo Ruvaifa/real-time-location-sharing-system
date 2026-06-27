@@ -60,6 +60,7 @@ export interface RoutePreviewData {
   distance: number;
   duration: number;
   destName: string;
+  isSos?: boolean;
 }
 
 interface AppStore {
