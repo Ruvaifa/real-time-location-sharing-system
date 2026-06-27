@@ -2205,3 +2205,242 @@ h4,
   0%, 100% { opacity: 0.6; }
   50% { opacity: 1; }
 }
+
+/* ==========================================
+   Real-Time SOS Alert System Styles
+   ========================================== */
+
+/* SOS Panic Button in Top Bar */
+.sos-btn {
+  border-color: color-mix(in oklch, var(--status-bad) 40%, var(--outline)) !important;
+  color: var(--status-bad) !important;
+  font-weight: 700 !important;
+}
+
+.sos-btn:hover {
+  background: color-mix(in oklch, var(--status-bad) 10%, var(--bg-panel)) !important;
+  border-color: var(--status-bad) !important;
+  transform: translateY(-1px);
+}
+
+.sos-btn.active {
+  background: var(--status-bad) !important;
+  color: var(--ink) !important;
+  border-color: var(--status-bad) !important;
+  box-shadow: 0 0 14px rgba(239, 68, 68, 0.55);
+  animation: sos-btn-pulse 1.8s infinite cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sos-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-bad);
+  display: inline-block;
+  transition: background 0.2s ease;
+}
+
+.sos-btn.active .sos-dot {
+  background: var(--ink);
+  animation: sos-dot-pulse 1s infinite alternate;
+}
+
+@keyframes sos-btn-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+  70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+@keyframes sos-dot-pulse {
+  0% { transform: scale(0.8); opacity: 0.5; }
+  100% { transform: scale(1.2); opacity: 1; }
+}
+
+/* SOS Banner Overlay */
+.sos-banner-container {
+  position: absolute;
+  top: 142px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1250;
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sos-alert-banner {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: color-mix(in oklch, var(--status-bad) 20%, rgba(20, 10, 10, 0.85));
+  border: 1px solid color-mix(in oklch, var(--status-bad) 60%, transparent);
+  border-radius: 16px;
+  box-shadow: 
+    0 12px 36px rgba(7, 10, 16, 0.6),
+    0 4px 12px rgba(239, 68, 68, 0.2),
+    inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+  color: var(--ink);
+  position: relative;
+  overflow: hidden;
+}
+
+.sos-alert-banner::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.12),
+    transparent
+  );
+  transform: skewX(-25deg);
+  animation: sos-banner-shimmer 3s infinite;
+}
+
+@keyframes sos-banner-shimmer {
+  0% { left: -100%; }
+  30% { left: 150%; }
+  100% { left: 150%; }
+}
+
+.sos-pulse-ring {
+  width: 24px;
+  height: 24px;
+  background: color-mix(in oklch, var(--status-bad) 30%, transparent);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  animation: sos-pulse-ring-anim 1.5s infinite ease-out;
+}
+
+.sos-pulse-dot {
+  width: 10px;
+  height: 10px;
+  background: var(--status-bad);
+  border-radius: 50%;
+}
+
+@keyframes sos-pulse-ring-anim {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
+  70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+.sos-banner-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sos-banner-title {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--status-bad);
+  text-transform: uppercase;
+}
+
+.sos-banner-desc {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+.sos-banner-cancel {
+  background: var(--bg-panel-strong);
+  border: 1px solid var(--outline);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.sos-banner-cancel:hover {
+  background: var(--status-bad);
+  border-color: var(--status-bad);
+  color: white;
+}
+
+/* Marker SOS Pulsing Ring */
+.marker-sos-ring {
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  border-radius: 50%;
+  border: 2px solid var(--status-bad);
+  pointer-events: none;
+  animation: marker-sos-pulse 1.6s infinite ease-out;
+}
+
+@keyframes marker-sos-pulse {
+  0% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+
+.custom-marker.alerting {
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.7);
+  animation: marker-alert-bounce 0.8s infinite alternate ease-in-out;
+}
+
+@keyframes marker-alert-bounce {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-4px); }
+}
+
+/* User List Alerting Style */
+.user-item.user-alerting {
+  background: color-mix(in oklch, var(--status-bad) 8%, transparent);
+  border-bottom-color: color-mix(in oklch, var(--status-bad) 20%, transparent);
+  padding-left: 8px;
+  padding-right: 8px;
+  margin-left: -8px;
+  margin-right: -8px;
+  border-radius: 8px;
+}
+
+.sos-badge {
+  font-family: "Space Grotesk", sans-serif;
+  background: var(--status-bad);
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+}
+
+.sos-pulse-small {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--status-bad);
+  box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  animation: sos-pulse-small-anim 1.2s infinite ease-in-out;
+  flex-shrink: 0;
+}
+
+@keyframes sos-pulse-small-anim {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+  70% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+

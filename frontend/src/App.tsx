@@ -513,6 +513,9 @@ function MapScreen() {
   const fitBounds = useAppStore((state) => state.fitBounds);
   const requestFitBounds = useAppStore((state) => state.requestFitBounds);
   const routePreview = useAppStore((state) => state.routePreview);
+  const alerts = useAppStore((state) => state.alerts);
+  const activeAlerts = useMemo(() => Object.values(alerts), [alerts]);
+  const isSelfAlerting = !!alerts[username];
 
   const ws = useRef<WebSocket | null>(null);
   const [, setTick] = useState(0);
@@ -560,6 +563,12 @@ function MapScreen() {
     },
     [sim.active, startSim, stopSim]
   );
+
+  const toggleSOS = useCallback(() => {
+    sendWsMessage("alert", {
+      alerting: !isSelfAlerting,
+    });
+  }, [isSelfAlerting]);
 
   useEffect(() => {
     let isStale = false;
@@ -1008,6 +1017,11 @@ function MapScreen() {
               }
               break;
             }
+            case "alert": {
+              const { userID, name, alerting, timestamp } = data;
+              useAppStore.getState().setAlert(userID, name, alerting, timestamp);
+              break;
+            }
           }
         } catch (err) {
           console.error("Failed to parse websocket message", err);
@@ -1127,6 +1141,14 @@ function MapScreen() {
                   <Navigation size={18} />
                 </button>
                 <button
+                  className={`map-pill-btn sos-btn ${isSelfAlerting ? "active" : ""}`}
+                  onClick={toggleSOS}
+                  title={isSelfAlerting ? "Cancel SOS Alert" : "Trigger SOS Alert"}
+                >
+                  <span className="sos-dot" />
+                  {isSelfAlerting ? "SOS Active" : "SOS"}
+                </button>
+                <button
                   className="map-pill-btn"
                   onClick={() => {
                     if (groupId) {
@@ -1197,6 +1219,7 @@ function MapScreen() {
           </div>
 
           <DestinationSearch />
+
         </>
       )}
 
@@ -1360,8 +1383,9 @@ function MapScreen() {
                     offset={[0, -20]}
                   >
                     <MarkerContent>
-                      <div className="custom-marker" style={{ borderColor: SELF_COLOR }}>
-                        <div className="custom-marker-inner" style={{ backgroundColor: SELF_COLOR }}>
+                      <div className={`custom-marker ${isSelfAlerting ? "alerting" : ""}`} style={{ borderColor: isSelfAlerting ? "var(--status-bad)" : SELF_COLOR }}>
+                        {isSelfAlerting && <div className="marker-sos-ring" />}
+                        <div className="custom-marker-inner" style={{ backgroundColor: isSelfAlerting ? "var(--status-bad)" : SELF_COLOR }}>
                           {getInitials(username)}
                         </div>
                       </div>
@@ -1403,6 +1427,7 @@ function MapScreen() {
 
                   const timeSince = Date.now() - peerData.timestamp;
                   const isActive = timeSince < 60000;
+                  const isPeerAlerting = !!alerts[peerId];
 
                   return (
                     <MapMarker
@@ -1414,12 +1439,13 @@ function MapScreen() {
                     >
                       <MarkerContent>
                         <div
-                          className="custom-marker"
-                            style={{ borderColor: isActive ? getHashColor(peerData.name) : "var(--status-muted)" }}
+                          className={`custom-marker ${isPeerAlerting ? "alerting" : ""}`}
+                          style={{ borderColor: isPeerAlerting ? "var(--status-bad)" : (isActive ? getHashColor(peerData.name) : "var(--status-muted)") }}
                         >
+                          {isPeerAlerting && <div className="marker-sos-ring" />}
                           <div
                             className="custom-marker-inner"
-                              style={{ backgroundColor: isActive ? getHashColor(peerData.name) : "var(--status-muted)" }}
+                            style={{ backgroundColor: isPeerAlerting ? "var(--status-bad)" : (isActive ? getHashColor(peerData.name) : "var(--status-muted)") }}
                           >
                             {getInitials(peerData.name)}
                           </div>
@@ -1562,13 +1588,20 @@ function MapScreen() {
             <span>Active {activePeers + 1}</span>
           </div>
 
-          <div className="user-item">
-            <div className="avatar" style={{ backgroundColor: SELF_COLOR }}>{getInitials(username)}</div>
+          <div className={`user-item ${isSelfAlerting ? "user-alerting" : ""}`}>
+            <div className="avatar" style={{ backgroundColor: isSelfAlerting ? "var(--status-bad)" : SELF_COLOR }}>{getInitials(username)}</div>
             <div className="user-info">
-              <div className="user-name">{username} (You)</div>
-              <div className="user-status">0m away &middot; just now</div>
+              <div className="user-name flex items-center gap-2">
+                {username} (You)
+                {isSelfAlerting && <span className="sos-badge">SOS</span>}
+              </div>
+              <div className="user-status">{isSelfAlerting ? "🚨 PANIC ALERT ACTIVE" : "0m away · just now"}</div>
             </div>
-            <div className="live-dot" />
+            {isSelfAlerting ? (
+              <div className="sos-pulse-small" />
+            ) : (
+              <div className="live-dot" />
+            )}
           </div>
 
           {peerEntries.map(([peerId, peerData]) => {
@@ -1587,20 +1620,30 @@ function MapScreen() {
                 : Math.round(dist) + " m";
             const timeSince = Date.now() - peerData.timestamp;
             const isActive = timeSince < 60000;
+            const isPeerAlerting = !!alerts[peerId];
 
             return (
-              <div className="user-item" key={peerId}>
-                <div className="avatar" style={{ backgroundColor: isActive ? getHashColor(peerData.name) : "var(--status-muted)" }}>
+              <div className={`user-item ${isPeerAlerting ? "user-alerting" : ""}`} key={peerId}>
+                <div className="avatar" style={{ backgroundColor: isPeerAlerting ? "var(--status-bad)" : (isActive ? getHashColor(peerData.name) : "var(--status-muted)") }}>
                   {getInitials(peerData.name)}
                 </div>
                 <div className="user-info">
-                  <div className="user-name">{peerData.name}</div>
-                  <div className="user-status">{distText} away &middot; {formatTimeAgo(peerData.timestamp)}</div>
+                  <div className="user-name flex items-center gap-2">
+                    {peerData.name}
+                    {isPeerAlerting && <span className="sos-badge">SOS</span>}
+                  </div>
+                  <div className="user-status">
+                    {isPeerAlerting ? "🚨 IN TROUBLE / SOS ACTIVE" : `${distText} away · ${formatTimeAgo(peerData.timestamp)}`}
+                  </div>
                 </div>
-                <div
-                  className="live-dot"
-                  style={{ backgroundColor: isActive ? "var(--status-good)" : "var(--status-warn)" }}
-                />
+                {isPeerAlerting ? (
+                  <div className="sos-pulse-small" />
+                ) : (
+                  <div
+                    className="live-dot"
+                    style={{ backgroundColor: isActive ? "var(--status-good)" : "var(--status-warn)" }}
+                  />
+                )}
               </div>
             );
           })}

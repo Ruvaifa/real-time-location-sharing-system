@@ -13,6 +13,12 @@ export interface LocationData {
   speed?: number;
 }
 
+export interface AlertData {
+  userID: string;
+  name: string;
+  timestamp: number;
+}
+
 export interface Route {
   id: string;
   name: string;
@@ -70,6 +76,7 @@ interface AppStore {
   fitBounds: FitBounds | null;
   routePreview: RoutePreviewData | null;
   chatMessages: ChatMessage[];
+  alerts: Record<string, AlertData>;
   setScreen: (screen: Screen) => void;
   setEmail: (email: string) => void;
   setUsername: (username: string) => void;
@@ -93,6 +100,8 @@ interface AppStore {
   clearChatMessages: () => void;
   requestFitBounds: (points: [number, number][]) => void;
   clearFitBounds: () => void;
+  setAlert: (userID: string, name: string, alerting: boolean, timestamp: number) => void;
+  clearAlerts: () => void;
 }
 
 function chatMessageKey(message: ChatMessage): string {
@@ -117,6 +126,7 @@ export const useAppStore = create<AppStore>((set) => ({
   fitBounds: null,
   routePreview: null,
   chatMessages: [],
+  alerts: {},
   setScreen: (screen) => set({ screen }),
   setEmail: (email) => set({ email }),
   setUsername: (username) => set({ username }),
@@ -136,7 +146,7 @@ export const useAppStore = create<AppStore>((set) => ({
       delete next[userID];
       return { peers: next };
     }),
-  clearLiveData: () => set({ location: null, peers: {}, trip: null, routePreview: null, chatMessages: [] }),
+  clearLiveData: () => set({ location: null, peers: {}, trip: null, routePreview: null, chatMessages: [], alerts: {} }),
   resetSession: () =>
     set({
       screen: "login",
@@ -150,6 +160,7 @@ export const useAppStore = create<AppStore>((set) => ({
       trip: null,
       routePreview: null,
       chatMessages: [],
+      alerts: {},
     }),
   startSim: (route) =>
     set({ sim: { active: true, route, progress: 0 } }),
@@ -198,6 +209,17 @@ export const useAppStore = create<AppStore>((set) => ({
       fitBounds: { points, key: (state.fitBounds?.key || 0) + 1 },
     })),
   clearFitBounds: () => set({ fitBounds: null }),
+  setAlert: (userID, name, alerting, timestamp) =>
+    set((state) => {
+      const next = { ...state.alerts };
+      if (alerting) {
+        next[userID] = { userID, name, timestamp };
+      } else {
+        delete next[userID];
+      }
+      return { alerts: next };
+    }),
+  clearAlerts: () => set({ alerts: {} }),
 }));
 
 // Standalone — reads ws from store at call time, avoids set() side-effects

@@ -16,4 +16,5 @@ const (
 	MsgTypeTripStart   = "trip_start"
 	MsgTypeTripEnd     = "trip_end"
 	MsgTypeChatMessage = "chat_message"
+	MsgTypeAlert       = "alert"
 )
