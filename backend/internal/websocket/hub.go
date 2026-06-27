@@ -43,6 +43,7 @@ type Hub struct {
 	groups map[string]map[*Client]bool
 	cache  map[string]map[string]model.LocationMessage
 	trips  map[string]*model.Trip
+	alerts map[string]map[string]bool
 
 	Register   chan *Client
 	Unregister chan *Client
@@ -64,6 +65,7 @@ func NewHub(maxGroupSize, maxMsgRate int, store storage.Store) *Hub {
 		groups:       make(map[string]map[*Client]bool),
 		cache:        make(map[string]map[string]model.LocationMessage),
 		trips:        make(map[string]*model.Trip),
+		alerts:       make(map[string]map[string]bool),
 		Register:     make(chan *Client),
 		Unregister:   make(chan *Client),
 		Broadcast:    make(chan HubMessage, 256),
@@ -152,6 +154,7 @@ func (h *Hub) handleRegister(client *Client) {
 	if _, ok := h.groups[client.GroupID]; !ok {
 		h.groups[client.GroupID] = make(map[*Client]bool)
 		h.cache[client.GroupID] = make(map[string]model.LocationMessage)
+		h.alerts[client.GroupID] = make(map[string]bool)
 	}
 
 	slog.Debug("Registering client", "user", client.UserID, "group", client.GroupID)
@@ -182,6 +185,39 @@ func (h *Hub) handleRegister(client *Client) {
 			client.CloseSend()
 			delete(h.groups[client.GroupID], client)
 			return
+		}
+	}
+
+	// Replay active alerts to the new joiner.
+	if alerts, ok := h.alerts[client.GroupID]; ok {
+		for uid, alerting := range alerts {
+			if !alerting {
+				continue
+			}
+			name := uid
+			if loc, cached := h.cache[client.GroupID][uid]; cached {
+				name = loc.Name
+			}
+			alertPayload := map[string]interface{}{
+				"userID":    uid,
+				"name":      name,
+				"alerting":  true,
+				"timestamp": time.Now().UnixMilli(),
+			}
+			msg, err := json.Marshal(alertPayload)
+			if err != nil {
+				continue
+			}
+			wrapped := model.Envelope{Type: model.MsgTypeAlert, Payload: msg}
+			wrappedBytes, err := json.Marshal(wrapped)
+			if err != nil {
+				continue
+			}
+			select {
+			case client.Send <- wrappedBytes:
+			default:
+				// If client buffer is full, handleRegister will exit anyway or handle it
+			}
 		}
 	}
 
@@ -226,6 +262,9 @@ func (h *Hub) handleUnregister(client *Client) {
 	if cg, ok := h.cache[client.GroupID]; ok {
 		delete(cg, client.UserID)
 	}
+	if ag, ok := h.alerts[client.GroupID]; ok {
+		delete(ag, client.UserID)
+	}
 
 	// Notify remaining peers.
 	disconnect := model.LocationMessage{
@@ -251,6 +290,7 @@ func (h *Hub) handleUnregister(client *Client) {
 		delete(h.groups, client.GroupID)
 		delete(h.cache, client.GroupID)
 		delete(h.trips, client.GroupID)
+		delete(h.alerts, client.GroupID)
 	}
 }
 
@@ -278,6 +318,8 @@ func (h *Hub) handleBroadcast(message HubMessage) {
 		h.handleTripEnd(message.Sender)
 	case model.MsgTypeChatMessage:
 		h.handleChatMessage(message.Sender, env.Payload)
+	case model.MsgTypeAlert:
+		h.handleAlert(message.Sender, env.Payload)
 	default:
 		slog.Warn("Unknown message type", "type", env.Type, "user", message.Sender.UserID)
 	}
@@ -551,6 +593,36 @@ func (h *Hub) sendPrivateMessage(groupID, senderID, recipientID, msgType string,
 			}
 		}
 	}
+}
+
+func (h *Hub) handleAlert(sender *Client, payload json.RawMessage) {
+	var alert struct {
+		UserID    string `json:"userID"`
+		Name      string `json:"name"`
+		Alerting  bool   `json:"alerting"`
+		Timestamp int64  `json:"timestamp"`
+	}
+	if err := json.Unmarshal(payload, &alert); err != nil {
+		slog.Warn("Bad alert payload", "user", sender.UserID, "error", err)
+		return
+	}
+
+	// Force server-trusted parameters
+	alert.UserID = sender.UserID
+	alert.Timestamp = time.Now().UnixMilli()
+
+	// Update alerts cache
+	if _, ok := h.alerts[sender.GroupID]; !ok {
+		h.alerts[sender.GroupID] = make(map[string]bool)
+	}
+	if alert.Alerting {
+		h.alerts[sender.GroupID][sender.UserID] = true
+	} else {
+		delete(h.alerts[sender.GroupID], sender.UserID)
+	}
+
+	// Broadcast to EVERYONE in the group (do not exclude sender, so they get status confirmation)
+	h.broadcastToGroup(sender.GroupID, model.MsgTypeAlert, alert, nil)
 }
 
 func (h *Hub) broadcastToGroup(groupID, msgType string, data interface{}, exclude *Client) {
