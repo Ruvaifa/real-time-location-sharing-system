@@ -14,6 +14,9 @@ RUN apk add --no-cache ca-certificates curl && \
 
 COPY --from=build /out/server /usr/local/bin/server
 
+WORKDIR /app
+RUN mkdir -p /app/uploads && chown -R appuser:appuser /app
+
 USER appuser
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s CMD curl -f http://localhost:8080/health || exit 1

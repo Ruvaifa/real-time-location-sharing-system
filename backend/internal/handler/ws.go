@@ -36,7 +36,12 @@ type Handler struct {
 // NewHandler creates a Handler with a configured WebSocket upgrader.
 func NewHandler(hub *ws.Hub, cfg *config.Config, router routing.Router, geocoder geocoding.Geocoder) *Handler {
 	allowed := make(map[string]bool, len(cfg.AllowedOrigins))
+	allowAll := false
 	for _, o := range cfg.AllowedOrigins {
+		if o == "*" {
+			allowAll = true
+			break
+		}
 		allowed[o] = true
 	}
 
@@ -50,6 +55,9 @@ func NewHandler(hub *ws.Hub, cfg *config.Config, router routing.Router, geocoder
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
 			CheckOrigin: func(r *http.Request) bool {
+				if allowAll {
+					return true
+				}
 				return allowed[r.Header.Get("Origin")]
 			},
 		},

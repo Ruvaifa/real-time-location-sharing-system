@@ -12,12 +12,9 @@ export async function getRoute(
   dest: [number, number]
 ): Promise<RouteResult> {
   const token = useAppStore.getState().token;
-  const res = await fetch(
-    `/api/route?origin=${origin[0]},${origin[1]}&dest=${dest[0]},${dest[1]}`,
-    {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    }
-  );
+  const res = await fetch(`/api/route?origin=${origin[0]},${origin[1]}&dest=${dest[0]},${dest[1]}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
   if (!res.ok) {
     throw new Error(`Routing failed: ${res.status}`);
   }

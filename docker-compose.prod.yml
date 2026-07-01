@@ -1,0 +1,65 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-app123}
+      POSTGRES_DB: location_share
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d location_share"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    image: migrate/migrate:v4.17.1
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend/migrations:/migrations:ro
+    command: ["-path", "/migrations", "-database", "postgres://app:${DB_PASSWORD:-app123}@db:5432/location_share?sslmode=disable", "up"]
+    restart: on-failure
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: 8080
+      APP_ENV: production
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: app
+      DB_PASSWORD: ${DB_PASSWORD:-app123}
+      DB_NAME: location_share
+      DB_SSLMODE: disable
+      JWT_SECRET: ${JWT_SECRET:-super-secret-key-change-in-prod}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-*}
+      MAX_GROUP_SIZE: 64
+      MAX_MSG_RATE: 10
+      LOCATION_RETENTION_DAYS: 7
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  db_data:

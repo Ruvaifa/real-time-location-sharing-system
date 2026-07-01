@@ -29,6 +29,17 @@ function buildWsUrl(groupId: string, token: string): string {
   return `${protocol}//${host}/ws/${groupId}?token=${token}`;
 }
 
+function mergeTripParticipants(
+  base: import("./store/useAppStore").TripData,
+  incoming: import("./store/useAppStore").TripData
+): import("./store/useAppStore").TripData {
+  return {
+    ...base,
+    ...incoming,
+    participants: Array.from(new Set([...(base.participants || []), ...(incoming.participants || [])])),
+  };
+}
+
 export function calculateDistance(
   lat1: number,
   lon1: number,
@@ -591,6 +602,33 @@ function PickerScreen() {
             />
           </div>
 
+        <button
+          className="continue-btn"
+          onClick={async () => {
+            if (!canStart) {
+              setPickerError("Please enter a Username and Room ID to start.");
+              return;
+            }
+            setPickerError(null);
+            try {
+              const response = await fetch(`/login?username=${encodeURIComponent(username)}`, {
+                method: "POST",
+              });
+              if (!response.ok) throw new Error("Auth failed");
+              const data = await response.json();
+              setToken(data.token);
+              setScreen("map");
+            } catch (err) {
+              console.error(err);
+              setPickerError("Could not connect to the server.");
+            }
+          }}
+          disabled={!canStart}
+        >
+          Start sharing location &rarr;
+        </button>
+        <div className="onboarding-footer">
+          No account needed &middot; end-to-end ephemeral
           <button
             className="continue-btn"
             type="submit"
@@ -684,6 +722,7 @@ function MapScreen() {
   const mapRef = useRef<Maplibregl.Map | null>(null);
   const hasPannedRef = useRef(false);
   const initialFixDoneRef = useRef(false);
+  const initialLocationPublishedRef = useRef(false);
   const participantRoutesRef = useRef<Record<string, LineCoordinate[]>>({});
   const participantRouteStateRef = useRef<
     Record<string, {
@@ -816,10 +855,40 @@ function MapScreen() {
   useEffect(() => {
     if (sim.active) return;
 
+    // ── DEMO FALLBACK START ──────────────────────────────────────────────────
+    // Remove this block once HTTPS/domain is configured — geolocation will work natively.
+    const setFallbackLocation = () => {
+      // Random position within central Delhi bounds
+      const DELHI_BOUNDS = {
+        latMin: 28.5800, latMax: 28.6400,
+        lngMin: 77.1850, lngMax: 77.2400,
+      };
+      const randomLat = DELHI_BOUNDS.latMin + Math.random() * (DELHI_BOUNDS.latMax - DELHI_BOUNDS.latMin);
+      const randomLng = DELHI_BOUNDS.lngMin + Math.random() * (DELHI_BOUNDS.lngMax - DELHI_BOUNDS.lngMin);
+
+      const fallback: LocationData = {
+        userID: username,
+        groupID: groupId,
+        lat: parseFloat(randomLat.toFixed(5)),
+        lng: parseFloat(randomLng.toFixed(5)),
+        name: username,
+        timestamp: Date.now(),
+        speed: 0,
+      };
+      setLocation(fallback);
+      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+        ws.current.send(JSON.stringify({ type: "location", payload: fallback }));
+      }
+    };
+    // ── DEMO FALLBACK END ────────────────────────────────────────────────────
+
+    // ── DEMO FALLBACK START ──────────────────────────────────────────────────
     if (!navigator.geolocation) {
-      console.error("Geolocation is not supported by your browser");
+      console.warn("Geolocation not supported — using fallback location");
+      setFallbackLocation();
       return;
     }
+    // ── DEMO FALLBACK END ────────────────────────────────────────────────────
 
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
@@ -839,7 +908,10 @@ function MapScreen() {
         }
       },
       (error) => {
-        console.error("Geolocation error: ", error.message);
+        // ── DEMO FALLBACK START ──────────────────────────────────────────────
+        console.warn("Geolocation error (likely non-HTTPS) — using fallback:", error.message);
+        setFallbackLocation();
+        // ── DEMO FALLBACK END ────────────────────────────────────────────────
       },
       {
         enableHighAccuracy: true,
@@ -990,11 +1062,11 @@ function MapScreen() {
 
       const movedMeters = state.lastFetchOrigin
         ? calculateDistance(
-            state.lastFetchOrigin.lat,
-            state.lastFetchOrigin.lng,
-            p.lat,
-            p.lng
-          )
+          state.lastFetchOrigin.lat,
+          state.lastFetchOrigin.lng,
+          p.lat,
+          p.lng
+        )
         : Infinity;
 
       if (movedMeters < ROUTE_FETCH_MIN_DISTANCE_METERS) return;
@@ -1015,7 +1087,7 @@ function MapScreen() {
             current.lastDestKey = destKey;
           }
         })
-        .catch(() => {})
+        .catch(() => { })
         .finally(() => {
           const current = participantRouteStateRef.current[p.id];
           if (current) {
@@ -1088,8 +1160,8 @@ function MapScreen() {
     function connect() {
       if (!isMounted) return;
       if (activeSocketRef.current &&
-          (activeSocketRef.current.readyState === WebSocket.CONNECTING ||
-           activeSocketRef.current.readyState === WebSocket.OPEN)) {
+        (activeSocketRef.current.readyState === WebSocket.CONNECTING ||
+          activeSocketRef.current.readyState === WebSocket.OPEN)) {
         return;
       }
       setWsStatus("connecting");
@@ -1108,7 +1180,6 @@ function MapScreen() {
           const currentTrip = useAppStore.getState().trip;
 
           if (tripData) {
-            if (currentTrip) return;
             const decoded: import("./store/useAppStore").TripData = {
               id: tripData.id,
               creatorID: tripData.creatorID,
@@ -1129,7 +1200,7 @@ function MapScreen() {
             setTrip(decoded);
             useAppStore.getState().setRoutePreview(null);
             requestFitBounds([decoded.origin, decoded.dest]);
-            if (tripData.creatorID !== userID) {
+            if (tripData.creatorID !== username) {
               sendWsMessage("trip_join");
             }
           } else if (currentTrip) {
@@ -1146,14 +1217,14 @@ function MapScreen() {
               durationSeconds: currentTrip.durationSeconds,
             });
           }
-        }).catch(() => {});
+        }).catch(() => { });
       };
 
       socket.onmessage = (event) => {
         if (!isMounted || activeSocketRef.current !== socket) return;
         try {
           const msg = JSON.parse(event.data);
-           const type = msg.type || "location";
+          const type = msg.type || "location";
           const data = msg.payload || msg;
 
           switch (type) {
@@ -1180,7 +1251,12 @@ function MapScreen() {
                 participants: data.participants || [],
                 startedAt: data.startedAt || null,
               };
-              setTrip(tripData);
+              const prev = useAppStore.getState().trip;
+              if (prev && prev.id === tripData.id) {
+                setTrip(mergeTripParticipants(prev, tripData));
+              } else {
+                setTrip(tripData);
+              }
               useAppStore.getState().setRoutePreview(null);
               requestFitBounds([tripData.origin, tripData.dest]);
               if (data.creatorID !== userID) {
@@ -1191,13 +1267,13 @@ function MapScreen() {
             case "trip_join":
               if (data.participants) {
                 const prev = useAppStore.getState().trip;
-                if (prev) setTrip({ ...prev, participants: data.participants });
+                if (prev) setTrip({ ...prev, participants: Array.from(new Set(data.participants)) });
               }
               break;
             case "trip_leave":
               if (data.participants) {
                 const prev = useAppStore.getState().trip;
-                if (prev) setTrip({ ...prev, participants: data.participants });
+                if (prev) setTrip({ ...prev, participants: Array.from(new Set(data.participants)) });
               }
               break;
             case "trip_start": {
@@ -1209,17 +1285,21 @@ function MapScreen() {
               setTrip(null);
               break;
             case "chat_history": {
-              const items = Array.isArray(data.items)
-                ? data.items
+              const items: unknown[] = Array.isArray(data.items)
+                ? (data.items as unknown[])
                 : Array.isArray(data.messages)
-                  ? data.messages
+                  ? (data.messages as unknown[])
                   : Array.isArray(data)
-                    ? data
+                    ? (data as unknown[])
                     : [];
 
-              const messages = items
-                .map((item: unknown) => normalizeChatMessage(item))
-                .filter((item): item is NonNullable<ReturnType<typeof normalizeChatMessage>> => item !== null);
+              const messages: NonNullable<ReturnType<typeof normalizeChatMessage>>[] = [];
+              for (const item of items) {
+                const message = normalizeChatMessage(item);
+                if (message) {
+                  messages.push(message);
+                }
+              }
               setChatMessages(messages);
               break;
             }
@@ -1271,6 +1351,19 @@ function MapScreen() {
   }, []);
 
   // Reset pan tracking when simulation toggles
+  useEffect(() => {
+    if (wsStatus !== "connected") {
+      initialLocationPublishedRef.current = false;
+      return;
+    }
+
+    if (initialLocationPublishedRef.current) return;
+    if (!location || !ws.current || ws.current.readyState !== WebSocket.OPEN) return;
+
+    ws.current.send(JSON.stringify({ type: "location", payload: location }));
+    initialLocationPublishedRef.current = true;
+  }, [wsStatus, location]);
+
   useEffect(() => {
     if (sim.active) {
       initialFixDoneRef.current = false;
@@ -1504,14 +1597,13 @@ function MapScreen() {
                   light: mapStyle === "voyager" ? MAP_STYLES.voyager : MAP_STYLES.light,
                 }}
                 className="w-full h-full"
-                onViewportChange={() => {}}
+                onViewportChange={() => { }}
                 ref={(map) => { mapRef.current = map; }}
               >
                 <MapControls position="bottom-right" showZoom={false} />
 
                 <MapBehaviorOnMount
                   location={location}
-                  simActive={sim.active}
                   hasPannedRef={hasPannedRef}
                   initialFixDoneRef={initialFixDoneRef}
                   mapRef={mapRef}
@@ -1705,33 +1797,33 @@ function MapScreen() {
                             </div>
                             <div className="popup-title">
                               <h4>{peerData.name}</h4>
-                                <p>
-                                  <span
-                                    className="live-dot"
-                                    style={{ backgroundColor: isActive ? "var(--status-good)" : "var(--status-muted)" }}
-                                  />
-                                  {isActive ? "Live" : "Offline"} &middot; {formatTimeAgo(peerData.timestamp)}
-                                </p>
+                              <p>
+                                <span
+                                  className="live-dot"
+                                  style={{ backgroundColor: isActive ? "var(--status-good)" : "var(--status-muted)" }}
+                                />
+                                {isActive ? "Live" : "Offline"} &middot; {formatTimeAgo(peerData.timestamp)}
+                              </p>
                             </div>
                           </div>
                           <div className="popup-row">
-                              <span className="popup-label">Coordinates</span>
-                              <span className="popup-value coord-value">
-                                {peerData.lat.toFixed(5)}, {peerData.lng.toFixed(5)}
-                              </span>
+                            <span className="popup-label">Coordinates</span>
+                            <span className="popup-value coord-value">
+                              {peerData.lat.toFixed(5)}, {peerData.lng.toFixed(5)}
+                            </span>
                           </div>
                           <div className="popup-row">
-                              <span className="popup-label">Distance</span>
-                              <span className="popup-value">{distText}</span>
+                            <span className="popup-label">Distance</span>
+                            <span className="popup-value">{distText}</span>
                           </div>
                           <div className="popup-row">
-                              <span className="popup-label">Last active</span>
-                              <span className="popup-value">{formatTimeAgo(peerData.timestamp)}</span>
+                            <span className="popup-label">Last active</span>
+                            <span className="popup-value">{formatTimeAgo(peerData.timestamp)}</span>
                           </div>
                           {peerData.speed !== undefined && (
                             <div className="popup-row">
-                                <span className="popup-label">Speed</span>
-                                <span className="popup-value">{(peerData.speed * 3.6).toFixed(1)} km/h</span>
+                              <span className="popup-label">Speed</span>
+                              <span className="popup-value">{(peerData.speed * 3.6).toFixed(1)} km/h</span>
                             </div>
                           )}
                         </div>
@@ -1931,14 +2023,12 @@ function MapScreen() {
 
 function MapBehaviorOnMount({
   location,
-  simActive,
   hasPannedRef,
   initialFixDoneRef,
   mapRef,
   fitBounds,
 }: {
   location: LocationData | null;
-  simActive: boolean;
   hasPannedRef: React.MutableRefObject<boolean>;
   initialFixDoneRef: React.MutableRefObject<boolean>;
   mapRef: React.MutableRefObject<Maplibregl.Map | null>;
