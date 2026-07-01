@@ -602,33 +602,6 @@ function PickerScreen() {
             />
           </div>
 
-        <button
-          className="continue-btn"
-          onClick={async () => {
-            if (!canStart) {
-              setPickerError("Please enter a Username and Room ID to start.");
-              return;
-            }
-            setPickerError(null);
-            try {
-              const response = await fetch(`/login?username=${encodeURIComponent(username)}`, {
-                method: "POST",
-              });
-              if (!response.ok) throw new Error("Auth failed");
-              const data = await response.json();
-              setToken(data.token);
-              setScreen("map");
-            } catch (err) {
-              console.error(err);
-              setPickerError("Could not connect to the server.");
-            }
-          }}
-          disabled={!canStart}
-        >
-          Start sharing location &rarr;
-        </button>
-        <div className="onboarding-footer">
-          No account needed &middot; end-to-end ephemeral
           <button
             className="continue-btn"
             type="submit"
