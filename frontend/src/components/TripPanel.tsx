@@ -99,11 +99,11 @@ export function TripPanel() {
           <Users size={14} />
           <span>{trip.participants.length} rider{trip.participants.length !== 1 ? "s" : ""}</span>
         </div>
-        {trip.participants.map((pid) => {
+        {trip.participants.map((pid, index) => {
           const peer = pid === username ? location : peers[pid];
           const isOnline = peer && Date.now() - (peer?.timestamp || 0) < 60000;
           return (
-            <div key={pid} className="trip-rider">
+            <div key={pid || `trip-participant-${trip.id}-${index}`} className="trip-rider">
               <div
                 className="trip-rider-dot"
                 style={{ backgroundColor: isOnline ? "#4CAF50" : "#888" }}

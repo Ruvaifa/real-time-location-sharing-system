@@ -1721,7 +1721,7 @@ function MapScreen() {
                   </MapMarker>
                 )}
 
-                {peerEntries.map(([peerId, peerData]) => {
+                {peerEntries.map(([peerId, peerData], index) => {
                   let dist = 0;
                   if (location) {
                     dist = calculateDistance(
@@ -1742,7 +1742,7 @@ function MapScreen() {
 
                   return (
                     <MapMarker
-                      key={peerId}
+                      key={peerId || `peer-${peerData.name || "unknown"}-${peerData.timestamp}-${index}`}
                       longitude={peerData.lng}
                       latitude={peerData.lat}
                       anchor="bottom"
@@ -1929,7 +1929,7 @@ function MapScreen() {
             )}
           </div>
 
-          {peerEntries.map(([peerId, peerData]) => {
+          {peerEntries.map(([peerId, peerData], index) => {
             let dist = 0;
             if (location) {
               dist = calculateDistance(
@@ -1950,7 +1950,7 @@ function MapScreen() {
             return (
               <div
                 className={`user-item ${isPeerAlerting ? "user-alerting" : ""}`}
-                key={peerId}
+                key={peerId || `peer-${peerData.name || "unknown"}-${peerData.timestamp}-${index}`}
                 onClick={() => locatePeer(peerId)}
                 style={{ cursor: "pointer" }}
               >

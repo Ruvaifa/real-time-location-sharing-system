@@ -17,6 +17,15 @@ function formatTime(timestamp: number): string {
   });
 }
 
+type OnlineMember = {
+  key: string;
+  id: string;
+  name: string;
+  online: boolean;
+  lastSeen: number;
+  isSelf: boolean;
+};
+
 export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
   const groupId = useAppStore((state) => state.groupId);
   const token = useAppStore((state) => state.token);
@@ -47,37 +56,54 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
   }, []);
 
   const onlineMembers = useMemo(() => {
-    const members = new Map<string, { id: string; name: string; online: boolean; lastSeen: number }>();
+    const members: OnlineMember[] = [];
+    const seenIds = new Set<string>();
 
-    members.set(username, {
+    const addMember = (member: Omit<OnlineMember, "key">) => {
+      const normalizedId = member.id.trim();
+      if (normalizedId) {
+        if (seenIds.has(normalizedId)) return;
+        seenIds.add(normalizedId);
+      }
+
+      members.push({
+        ...member,
+        key: normalizedId || `${member.name || "member"}-${member.lastSeen}-${members.length}`,
+      });
+    };
+
+    addMember({
       id: username,
       name: username,
       online: Boolean(location),
       lastSeen: location?.timestamp || Date.now(),
+      isSelf: true,
     });
 
     trip?.participants.forEach((participant) => {
       const peer = peers[participant];
       const isOnline = participant === username || Boolean(peer && Date.now() - peer.timestamp < 60000);
-      members.set(participant, {
+      addMember({
         id: participant,
         name: participant,
         online: isOnline,
         lastSeen: participant === username ? (location?.timestamp || Date.now()) : (peer?.timestamp || Date.now()),
+        isSelf: participant === username,
       });
     });
 
     Object.values(peers).forEach((peer) => {
       const isOnline = Date.now() - peer.timestamp < 60000;
-      members.set(peer.userID, {
+      addMember({
         id: peer.userID,
         name: peer.name,
         online: isOnline,
         lastSeen: peer.timestamp,
+        isSelf: peer.userID === username,
       });
     });
 
-    return [...members.values()].sort((left, right) => Number(right.online) - Number(left.online) || left.name.localeCompare(right.name));
+    return members.sort((left, right) => Number(right.online) - Number(left.online) || left.name.localeCompare(right.name));
   }, [location, peers, trip?.participants, username, tick]);
 
   useEffect(() => {
@@ -231,6 +257,7 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
     <AnimatePresence>
       {isOpen && (
         <motion.aside
+          key="chat-panel"
           initial={{ opacity: 0, y: 12, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 12, scale: 0.98 }}
@@ -264,12 +291,14 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
             >
               Group
             </button>
-            {onlineMembers.filter(m => m.id !== username).map((member) => (
+            {onlineMembers.filter((member) => !member.isSelf).map((member) => (
               <button
-                key={member.id}
+                key={member.key}
                 className={`chat-channel-btn ${activeChatTarget === member.id ? "active" : ""} ${member.online ? "online" : "offline"}`}
                 onClick={() => {
-                  setActiveChatTarget(member.id);
+                  if (member.id) {
+                    setActiveChatTarget(member.id);
+                  }
                   setChatMessages([]);
                 }}
               >
@@ -416,6 +445,7 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
       <AnimatePresence>
         {activeLightboxImage && (
           <motion.div
+            key="chat-lightbox"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
