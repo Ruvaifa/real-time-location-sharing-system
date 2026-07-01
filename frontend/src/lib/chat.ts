@@ -57,7 +57,7 @@ export function normalizeChatMessage(input: unknown): ChatMessage | null {
     clientMessageId: clientMessageId || undefined,
     groupID: stringValue(data.groupID || data.groupId || data.group_id),
     userID: stringValue(data.userID || data.userId || data.user_id),
-    username: stringValue(data.username || data.user_name || data.name),
+    username: stringValue(data.username || data.user_name || data.name || data.userID || data.userId || data.user_id),
     text,
     mediaURL: mediaURL || undefined,
     timestamp: numberValue(data.timestamp || data.timestamp_ms),

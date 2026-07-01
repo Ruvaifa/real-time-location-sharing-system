@@ -8,13 +8,42 @@ export function TripPanel() {
   const location = useAppStore((s) => s.location);
   const peers = useAppStore((s) => s.peers);
   const username = useAppStore((s) => s.username);
+  const userID = useAppStore((s) => s.userID);
+  const chatMessages = useAppStore((s) => s.chatMessages);
   const setTrip = useAppStore((s) => s.setTrip);
 
   if (!trip) return null;
 
-  const isCreator = trip.creatorID === username;
+  const isCreator = trip.creatorID === userID;
   const isActive = trip.status === "active";
   const isPlanning = trip.status === "planning";
+
+  const knownNames = useMemo(() => {
+    const names = new Map<string, string>();
+    if (username) {
+      names.set(userID, username);
+    }
+    if (trip.creatorID && trip.creatorName) {
+      names.set(trip.creatorID, trip.creatorName);
+    }
+    Object.values(peers).forEach((peer) => {
+      if (peer.name && peer.name.trim()) {
+        names.set(peer.userID, peer.name);
+      }
+    });
+    chatMessages.forEach((message) => {
+      if (message.username && message.username.trim() && message.username !== message.userID) {
+        names.set(message.userID, message.username);
+      }
+    });
+    return names;
+  }, [chatMessages, peers, trip.creatorID, trip.creatorName, userID, username]);
+
+  const resolveParticipantName = (participantID: string, preferredName?: string) => {
+    const trimmed = preferredName?.trim();
+    if (trimmed && trimmed !== participantID) return trimmed;
+    return knownNames.get(participantID) || trimmed || participantID;
+  };
 
   const distanceToDest = useMemo(() => {
     if (!location) return null;
@@ -100,8 +129,9 @@ export function TripPanel() {
           <span>{trip.participants.length} rider{trip.participants.length !== 1 ? "s" : ""}</span>
         </div>
         {trip.participants.map((pid, index) => {
-          const peer = pid === username ? location : peers[pid];
+          const peer = pid === userID ? location : peers[pid];
           const isOnline = peer && Date.now() - (peer?.timestamp || 0) < 60000;
+          const participantName = resolveParticipantName(pid, pid === userID ? username : peer?.name);
           return (
             <div key={pid || `trip-participant-${trip.id}-${index}`} className="trip-rider">
               <div
@@ -109,7 +139,7 @@ export function TripPanel() {
                 style={{ backgroundColor: isOnline ? "#4CAF50" : "#888" }}
               />
               <span className="trip-rider-name">
-                {pid}{pid === username ? " (You)" : ""}
+                {participantName}{pid === userID ? " (You)" : ""}
               </span>
             </div>
           );

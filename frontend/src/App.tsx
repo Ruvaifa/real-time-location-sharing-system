@@ -653,6 +653,7 @@ function MapScreen() {
   const groupId = useAppStore((state) => state.groupId);
   const location = useAppStore((state) => state.location);
   const peers = useAppStore((state) => state.peers);
+  const chatMessages = useAppStore((state) => state.chatMessages);
   const setLocation = useAppStore((state) => state.setLocation);
   const upsertPeer = useAppStore((state) => state.upsertPeer);
   const removePeer = useAppStore((state) => state.removePeer);
@@ -707,6 +708,39 @@ function MapScreen() {
   >({});
 
   const peerEntries = useMemo(() => Object.entries(peers), [peers]);
+  const displayNameByUserID = useMemo(() => {
+    const names = new Map<string, string>();
+
+    if (username) {
+      names.set(userID, username);
+    }
+
+    if (trip?.creatorID && trip.creatorName) {
+      names.set(trip.creatorID, trip.creatorName);
+    }
+
+    Object.values(peers).forEach((peer) => {
+      if (peer.name && peer.name.trim()) {
+        names.set(peer.userID, peer.name);
+      }
+    });
+
+    chatMessages.forEach((message) => {
+      if (message.username && message.username.trim() && message.username !== message.userID) {
+        names.set(message.userID, message.username);
+      }
+    });
+
+    return names;
+  }, [chatMessages, peers, trip?.creatorID, trip?.creatorName, userID, username]);
+
+  const resolveDisplayName = useCallback((targetID: string, preferredName?: string) => {
+    const trimmed = preferredName?.trim();
+    if (trimmed && trimmed !== targetID) {
+      return trimmed;
+    }
+    return displayNameByUserID.get(targetID) || trimmed || targetID;
+  }, [displayNameByUserID]);
   const mapStyleItems: NavItem[] = useMemo(
     () => [
       { id: "dark", icon: Moon, label: "Dark" },
@@ -840,7 +874,7 @@ function MapScreen() {
       const randomLng = DELHI_BOUNDS.lngMin + Math.random() * (DELHI_BOUNDS.lngMax - DELHI_BOUNDS.lngMin);
 
       const fallback: LocationData = {
-        userID: username,
+        userID,
         groupID: groupId,
         lat: parseFloat(randomLat.toFixed(5)),
         lng: parseFloat(randomLng.toFixed(5)),
@@ -958,7 +992,7 @@ function MapScreen() {
         if (!location) return;
         next.push({
           id,
-          name: username,
+          name: resolveDisplayName(id, username),
           color: SELF_ROUTE_COLOR,
           lat: location.lat,
           lng: location.lng,
@@ -970,10 +1004,11 @@ function MapScreen() {
       const peer = peers[id];
       if (!peer) return;
       if (Date.now() - peer.timestamp > 60000) return;
+      const displayName = resolveDisplayName(id, peer.name);
       next.push({
         id,
-        name: peer.name,
-        color: getHashColor(peer.name),
+        name: displayName,
+        color: getHashColor(displayName),
         lat: peer.lat,
         lng: peer.lng,
         timestamp: peer.timestamp,
@@ -981,7 +1016,7 @@ function MapScreen() {
     });
 
     return next;
-  }, [trip, username, userID, location, peers]);
+  }, [trip, username, userID, location, peers, resolveDisplayName]);
 
   const participantRouteLocations = useMemo(() => {
     if (!trip) return [] as typeof participantLocations;
@@ -1173,7 +1208,7 @@ function MapScreen() {
             setTrip(decoded);
             useAppStore.getState().setRoutePreview(null);
             requestFitBounds([decoded.origin, decoded.dest]);
-            if (tripData.creatorID !== username) {
+            if (tripData.creatorID !== userID) {
               sendWsMessage("trip_join");
             }
           } else if (currentTrip) {
@@ -1367,7 +1402,7 @@ function MapScreen() {
               <div className="sos-banner-content">
                 <div className="sos-banner-title">Emergency SOS Alert</div>
                 <div className="sos-banner-desc">
-                  <strong>{alert.name || alert.userID}</strong> needs help!
+                  <strong>{resolveDisplayName(alert.userID, alert.name)}</strong> needs help!
                 </div>
               </div>
               {locatedPeers[alert.userID] ? (
@@ -1697,16 +1732,16 @@ function MapScreen() {
                       <div className={`custom-marker ${isSelfAlerting ? "alerting" : ""}`} style={{ borderColor: isSelfAlerting ? "var(--status-bad)" : SELF_COLOR }}>
                         {isSelfAlerting && <div className="marker-sos-ring" />}
                         <div className="custom-marker-inner" style={{ backgroundColor: isSelfAlerting ? "var(--status-bad)" : SELF_COLOR }}>
-                          {getInitials(username)}
+                          {getInitials(resolveDisplayName(userID, username))}
                         </div>
                       </div>
                     </MarkerContent>
                     <MarkerPopup offset={24} className="dark-popup">
                       <div className="popup-content">
                         <div className="popup-header">
-                          <div className="avatar" style={{ backgroundColor: SELF_COLOR }}>{getInitials(username)}</div>
+                          <div className="avatar" style={{ backgroundColor: SELF_COLOR }}>{getInitials(resolveDisplayName(userID, username))}</div>
                           <div className="popup-title">
-                            <h4>{username} (You)</h4>
+                            <h4>{resolveDisplayName(userID, username)} (You)</h4>
                             <p><span className="live-dot" /> Live &middot; just now</p>
                           </div>
                         </div>
@@ -1739,10 +1774,11 @@ function MapScreen() {
                   const timeSince = Date.now() - peerData.timestamp;
                   const isActive = timeSince < 60000;
                   const isPeerAlerting = !!alerts[peerId];
+                  const peerName = resolveDisplayName(peerId, peerData.name);
 
                   return (
                     <MapMarker
-                      key={peerId || `peer-${peerData.name || "unknown"}-${peerData.timestamp}-${index}`}
+                      key={peerId || `peer-${peerName || "unknown"}-${peerData.timestamp}-${index}`}
                       longitude={peerData.lng}
                       latitude={peerData.lat}
                       anchor="bottom"
@@ -1751,25 +1787,25 @@ function MapScreen() {
                       <MarkerContent>
                         <div
                           className={`custom-marker ${isPeerAlerting ? "alerting" : ""}`}
-                          style={{ borderColor: isPeerAlerting ? "var(--status-bad)" : (isActive ? getHashColor(peerData.name) : "var(--status-muted)") }}
+                          style={{ borderColor: isPeerAlerting ? "var(--status-bad)" : (isActive ? getHashColor(peerName) : "var(--status-muted)") }}
                         >
                           {isPeerAlerting && <div className="marker-sos-ring" />}
                           <div
                             className="custom-marker-inner"
-                            style={{ backgroundColor: isPeerAlerting ? "var(--status-bad)" : (isActive ? getHashColor(peerData.name) : "var(--status-muted)") }}
+                            style={{ backgroundColor: isPeerAlerting ? "var(--status-bad)" : (isActive ? getHashColor(peerName) : "var(--status-muted)") }}
                           >
-                            {getInitials(peerData.name)}
+                            {getInitials(peerName)}
                           </div>
                         </div>
                       </MarkerContent>
                       <MarkerPopup offset={24} className="dark-popup">
                         <div className="popup-content">
                           <div className="popup-header">
-                            <div className="avatar" style={{ backgroundColor: getHashColor(peerData.name) }}>
-                              {getInitials(peerData.name)}
+                            <div className="avatar" style={{ backgroundColor: getHashColor(peerName) }}>
+                              {getInitials(peerName)}
                             </div>
                             <div className="popup-title">
-                              <h4>{peerData.name}</h4>
+                              <h4>{peerName}</h4>
                               <p>
                                 <span
                                   className="live-dot"

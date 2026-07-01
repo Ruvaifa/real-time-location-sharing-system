@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, Image, MessageSquare, Send, X } from "lucide-react";
 
@@ -30,6 +30,7 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
   const groupId = useAppStore((state) => state.groupId);
   const token = useAppStore((state) => state.token);
   const username = useAppStore((state) => state.username);
+  const userID = useAppStore((state) => state.userID);
   const location = useAppStore((state) => state.location);
   const peers = useAppStore((state) => state.peers);
   const trip = useAppStore((state) => state.trip);
@@ -49,6 +50,40 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
   const [activeChatTarget, setActiveChatTarget] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [tick, setTick] = useState(0);
+
+  const knownNames = useMemo(() => {
+    const names = new Map<string, string>();
+
+    if (username) {
+      names.set(userID, username);
+    }
+
+    if (trip?.creatorID && trip.creatorName) {
+      names.set(trip.creatorID, trip.creatorName);
+    }
+
+    Object.values(peers).forEach((peer) => {
+      if (peer.name && peer.name.trim()) {
+        names.set(peer.userID, peer.name);
+      }
+    });
+
+    chatMessages.forEach((message) => {
+      if (message.username && message.username.trim() && message.username !== message.userID) {
+        names.set(message.userID, message.username);
+      }
+    });
+
+    return names;
+  }, [chatMessages, peers, trip?.creatorID, trip?.creatorName, userID, username]);
+
+  const resolveMemberName = useCallback((memberID: string, preferredName?: string) => {
+    const trimmed = preferredName?.trim();
+    if (trimmed && trimmed !== memberID) {
+      return trimmed;
+    }
+    return knownNames.get(memberID) || trimmed || memberID;
+  }, [knownNames]);
 
   useEffect(() => {
     const interval = setInterval(() => setTick((t) => t + 1), 10000);
@@ -73,8 +108,8 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
     };
 
     addMember({
-      id: username,
-      name: username,
+      id: userID,
+      name: resolveMemberName(userID, username),
       online: Boolean(location),
       lastSeen: location?.timestamp || Date.now(),
       isSelf: true,
@@ -82,13 +117,13 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
 
     trip?.participants.forEach((participant) => {
       const peer = peers[participant];
-      const isOnline = participant === username || Boolean(peer && Date.now() - peer.timestamp < 60000);
+      const isOnline = participant === userID || Boolean(peer && Date.now() - peer.timestamp < 60000);
       addMember({
         id: participant,
-        name: participant,
+        name: resolveMemberName(participant, participant === userID ? username : peer?.name),
         online: isOnline,
-        lastSeen: participant === username ? (location?.timestamp || Date.now()) : (peer?.timestamp || Date.now()),
-        isSelf: participant === username,
+        lastSeen: participant === userID ? (location?.timestamp || Date.now()) : (peer?.timestamp || Date.now()),
+        isSelf: participant === userID,
       });
     });
 
@@ -96,15 +131,15 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
       const isOnline = Date.now() - peer.timestamp < 60000;
       addMember({
         id: peer.userID,
-        name: peer.name,
+        name: resolveMemberName(peer.userID, peer.name),
         online: isOnline,
         lastSeen: peer.timestamp,
-        isSelf: peer.userID === username,
+        isSelf: peer.userID === userID,
       });
     });
 
     return members.sort((left, right) => Number(right.online) - Number(left.online) || left.name.localeCompare(right.name));
-  }, [location, peers, trip?.participants, username, tick]);
+  }, [location, peers, resolveMemberName, trip?.participants, userID, username, tick]);
 
   useEffect(() => {
     if (!groupId || !token) return;
@@ -146,10 +181,10 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
       }
       return (
         msg.recipientID === activeChatTarget ||
-        (msg.userID === activeChatTarget && msg.recipientID === username)
+        (msg.userID === activeChatTarget && msg.recipientID === userID)
       );
     });
-  }, [chatMessages, activeChatTarget, username]);
+  }, [chatMessages, activeChatTarget, userID]);
 
   const canSend = Boolean(draft.trim()) && ws?.readyState === WebSocket.OPEN && !isUploading;
 
@@ -268,7 +303,7 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
             <div className="chat-panel-title">
               <div className="chat-panel-kicker">
                 <MessageSquare size={14} />
-                <span>{activeChatTarget ? `Chat with ${activeChatTarget}` : "Group Chat"}</span>
+                <span>{activeChatTarget ? `Chat with ${resolveMemberName(activeChatTarget)}` : "Group Chat"}</span>
               </div>
               <div className="chat-panel-meta">
                 <span>{groupId || "No room selected"}</span>
@@ -303,7 +338,7 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
                 }}
               >
                 <span className="chat-channel-dot" />
-                {member.name}
+                {resolveMemberName(member.id, member.name)}
               </button>
             ))}
           </div>
@@ -329,7 +364,7 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
                   <strong>No messages yet</strong>
                   <p>
                     {activeChatTarget
-                      ? `Send a private message to ${activeChatTarget} to start the conversation.`
+                      ? `Send a private message to ${resolveMemberName(activeChatTarget)} to start the conversation.`
                       : "Say hello to the group and start the conversation."}
                   </p>
                 </div>
@@ -337,7 +372,8 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
             )}
 
             {displayedMessages.map((message: ChatMessage) => {
-              const isSelf = message.userID === username;
+              const isSelf = message.userID === userID;
+              const authorName = isSelf ? "You" : resolveMemberName(message.userID, message.username);
 
               if (message.kind === "system") {
                 return (
@@ -354,7 +390,7 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
                 >
                   <div className="chat-message-card">
                     <div className="chat-message-head">
-                      <span className="chat-message-author">{isSelf ? "You" : message.username}</span>
+                      <span className="chat-message-author">{authorName}</span>
                       <span className="chat-message-time">{formatTime(message.timestamp)}</span>
                     </div>
                     {message.kind === "image" && message.mediaURL && (
@@ -391,7 +427,7 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
                   ? isUploading
                     ? "Uploading image..."
                     : activeChatTarget
-                      ? `Write a private message to ${activeChatTarget}...`
+                        ? `Write a private message to ${resolveMemberName(activeChatTarget)}...`
                       : "Write a message to the group..."
                   : "Connecting to chat..."
               }
