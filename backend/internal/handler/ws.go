@@ -88,7 +88,8 @@ func (h *Handler) Routes() chi.Router {
 	r.Handle("/uploads/*", http.StripPrefix("/uploads/", fileServer))
 
 	// Public routes
-	r.With(appmw.RateLimit(h.loginLimiter)).Post("/login", h.Login)
+	r.With(appmw.RateLimit(h.loginLimiter)).Post("/api/auth/signup", h.Signup)
+	r.With(appmw.RateLimit(h.loginLimiter)).Post("/api/auth/login", h.Login)
 	r.Get("/health", h.Health)
 	r.Get("/ready", h.Ready)
 
@@ -97,6 +98,8 @@ func (h *Handler) Routes() chi.Router {
 		r.Use(appmw.Auth(h.tm))
 		r.Get("/api/search", h.geoH.Search)
 		r.Get("/api/route", h.routeH.GetRoute)
+		r.Post("/api/rooms", h.CreateRoom)
+		r.Post("/api/rooms/join", h.JoinRoom)
 		r.Get("/api/trip/{groupID}", h.GetActiveTrip)
 		r.Get("/api/groups/{groupID}/messages", h.GetGroupMessages)
 		r.Post("/api/groups/{groupID}/chat/upload", h.UploadImage)
@@ -133,25 +136,6 @@ func (h *Handler) Ready(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("OK"))
 }
 
-// Login creates a JWT for a user. In a real app, you'd check passwords here.
-func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
-	userID := r.URL.Query().Get("username")
-	if userID == "" {
-		apierr.Render(w, http.StatusBadRequest, "MISSING_USERNAME", "username query parameter is required")
-		return
-	}
-
-	token, err := h.tm.Generate(userID)
-	if err != nil {
-		slog.Error("Failed to generate token", "user", userID, "error", err)
-		apierr.Render(w, http.StatusInternalServerError, "AUTH_ERROR", "Could not generate token")
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"token":"` + token + `"}`))
-}
-
 // ServeWs upgrades an HTTP request to a WebSocket and registers the client.
 func (h *Handler) ServeWs(w http.ResponseWriter, r *http.Request) {
 	// 1. Get identity from middleware context (verified JWT)
@@ -175,7 +159,24 @@ func (h *Handler) ServeWs(w http.ResponseWriter, r *http.Request) {
 	if h.hub.Store != nil {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
-		if err := h.hub.Store.UpsertRoomMember(ctx, groupID, userID, userID); err != nil {
+
+		// Enforce room password membership validation
+		isMember, err := h.hub.Store.IsRoomMember(ctx, groupID, userID)
+		if err != nil {
+			slog.Error("Failed to check room membership", "user", userID, "group", groupID, "error", err)
+			apierr.Render(w, http.StatusInternalServerError, "DB_ERROR", "Could not verify room membership")
+			return
+		}
+		if !isMember {
+			apierr.Render(w, http.StatusForbidden, "FORBIDDEN", "Must verify room password before joining")
+			return
+		}
+
+		name, _, err := h.hub.Store.GetUser(ctx, userID)
+		if err != nil {
+			name = userID
+		}
+		if err := h.hub.Store.UpsertRoomMember(ctx, groupID, userID, name); err != nil {
 			slog.Error("Failed to join room", "user", userID, "group", groupID, "error", err)
 			apierr.Render(w, http.StatusInternalServerError, "JOIN_ROOM_FAILED", "Could not join room")
 			return

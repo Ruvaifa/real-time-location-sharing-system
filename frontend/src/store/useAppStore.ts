@@ -3,6 +3,12 @@ import type { ChatMessage } from "../lib/chat";
 
 export type Screen = "login" | "picker" | "map";
 
+export interface UserProfile {
+  id: string;
+  email: string;
+  name: string;
+}
+
 export interface LocationData {
   userID: string;
   groupID: string;
@@ -67,10 +73,12 @@ interface AppStore {
   screen: Screen;
   email: string;
   username: string;
+  userID: string;
   groupId: string;
   location: LocationData | null;
   peers: Record<string, LocationData>;
   token: string;
+  user: UserProfile | null;
   sim: SimState;
   trip: TripData | null;
   ws: WebSocket | null;
@@ -81,8 +89,10 @@ interface AppStore {
   setScreen: (screen: Screen) => void;
   setEmail: (email: string) => void;
   setUsername: (username: string) => void;
+  setUserID: (userID: string) => void;
   setGroupId: (groupId: string) => void;
   setToken: (token: string) => void;
+  setUser: (user: UserProfile | null) => void;
   setLocation: (location: LocationData | null) => void;
   upsertPeer: (peer: LocationData) => void;
   clearLiveData: () => void;
@@ -117,10 +127,12 @@ export const useAppStore = create<AppStore>((set) => ({
   screen: "login",
   email: "",
   username: "",
+  userID: "",
   groupId: "",
   location: null,
   peers: {},
   token: "",
+  user: null,
   sim: { active: false, route: null, progress: 0 },
   trip: null,
   ws: null,
@@ -131,8 +143,10 @@ export const useAppStore = create<AppStore>((set) => ({
   setScreen: (screen) => set({ screen }),
   setEmail: (email) => set({ email }),
   setUsername: (username) => set({ username }),
+  setUserID: (userID) => set({ userID }),
   setGroupId: (groupId) => set({ groupId }),
   setToken: (token) => set({ token }),
+  setUser: (user) => set({ user }),
   setLocation: (location) => set({ location }),
   upsertPeer: (peer) =>
     set((state) => ({
@@ -153,10 +167,12 @@ export const useAppStore = create<AppStore>((set) => ({
       screen: "login",
       email: "",
       username: "",
+      userID: "",
       groupId: "",
       location: null,
       peers: {},
       token: "",
+      user: null,
       sim: { active: false, route: null, progress: 0 },
       trip: null,
       routePreview: null,

@@ -321,16 +321,12 @@ function getInitials(name: string): string {
 
 export default function App() {
   const screen = useAppStore((state) => state.screen);
-  const setScreen = useAppStore((state) => state.setScreen);
 
   return (
     <div className="mobile-app-container">
       <AnimatePresence mode="wait">
         {screen === "login" && (
-          <LoginScreen
-            key="login"
-            onContinue={() => setScreen("picker")}
-          />
+          <LoginScreen key="login" />
         )}
         {screen === "picker" && <PickerScreen key="picker" />}
         {screen === "map" && <MapScreen key="map" />}
@@ -339,9 +335,63 @@ export default function App() {
   );
 }
 
-function LoginScreen({ onContinue }: { onContinue: () => void }) {
-  const email = useAppStore((state) => state.email);
-  const setEmail = useAppStore((state) => state.setEmail);
+function LoginScreen() {
+  const setScreen = useAppStore((state) => state.setScreen);
+  const setToken = useAppStore((state) => state.setToken);
+  const setUser = useAppStore((state) => state.setUser);
+  const setUsername = useAppStore((state) => state.setUsername);
+  const setUserID = useAppStore((state) => state.setUserID);
+
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim() || !password.trim() || (isSignUp && !name.trim())) {
+      setError("Please fill in all fields.");
+      return;
+    }
+    setError(null);
+    setLoading(true);
+
+    try {
+      const host = import.meta.env.VITE_WS_HOST || window.location.host;
+      const protocol = window.location.protocol === "https:" ? "https:" : "http:";
+      const endpoint = isSignUp ? "/api/auth/signup" : "/api/auth/login";
+      
+      const body = isSignUp 
+        ? { email, password, name }
+        : { email, password };
+
+      const response = await fetch(`${protocol}//${host}${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error?.message || data.message || data.error || "Authentication failed");
+      }
+
+      setToken(data.token);
+      setUser(data.user);
+      setUsername(data.user.name);
+      setUserID(data.user.id);
+      setScreen("picker");
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Could not connect to the server.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isFormValid = email.trim() && password.trim() && (!isSignUp || name.trim());
 
   return (
     <motion.div
@@ -362,45 +412,64 @@ function LoginScreen({ onContinue }: { onContinue: () => void }) {
         <h1 className="login-title">ParkQ Live</h1>
         <p className="login-subtitle">Move together, track together.</p>
 
-        <div className="input-wrapper">
-          <input
-            type="email"
-            placeholder="Email address"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="login-input"
-          />
-          {email && (
-            <button className="clear-input" onClick={() => setEmail("")}>
-              &times;
-            </button>
+        <form onSubmit={handleSubmit} style={{ width: "100%" }}>
+          {isSignUp && (
+            <div className="input-wrapper">
+              <input
+                type="text"
+                placeholder="Full Name e.g. Rahul"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="login-input"
+                required
+              />
+            </div>
           )}
+
+          <div className="input-wrapper">
+            <input
+              type="email"
+              placeholder="Email address"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="login-input"
+              required
+            />
+          </div>
+
+          <div className="input-wrapper">
+            <input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="login-input"
+              required
+            />
+          </div>
+
+          <button className="btn-primary" type="submit" disabled={!isFormValid || loading}>
+            {loading ? "Please wait..." : isSignUp ? "Sign Up" : "Log In"}
+          </button>
+        </form>
+
+        <div style={{ marginTop: 12, textAlign: "center", fontSize: 14 }}>
+          <button
+            style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", textDecoration: "underline", fontWeight: 600 }}
+            onClick={() => {
+              setIsSignUp(!isSignUp);
+              setError(null);
+            }}
+          >
+            {isSignUp ? "Already have an account? Log In" : "Don't have an account? Sign Up"}
+          </button>
         </div>
 
-        <button className="btn-primary" onClick={onContinue} disabled={!email.trim()}>
-          Continue
-        </button>
-
-        <div className="divider">
-          <span>or</span>
-        </div>
-
-        <button className="btn-secondary" onClick={onContinue}>
-          <svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="currentColor" />
-            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="currentColor" />
-            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="currentColor" />
-            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="currentColor" />
-          </svg>
-          Continue with Google
-        </button>
-
-        <button className="btn-secondary" onClick={onContinue}>
-          <svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path d="M16.365 14.502c-0.015-3.66 2.971-5.412 3.109-5.495-1.698-2.483-4.321-2.819-5.249-2.863-2.236-0.225-4.364 1.317-5.513 1.317-1.135 0-2.88-1.282-4.707-1.246-2.404 0.035-4.636 1.398-5.875 3.551-2.527 4.372-0.645 10.846 1.815 14.398 1.192 1.733 2.628 3.668 4.492 3.593 1.782-0.078 2.457-1.155 4.606-1.155 2.133 0 2.76 1.155 4.638 1.121 1.93-0.04 3.167-1.745 4.343-3.469 1.36-1.996 1.921-3.927 1.95-4.027-0.04-0.018-3.593-1.378-3.609-5.725zM15.422 4.298c0.973-1.177 1.624-2.803 1.446-4.432-1.392 0.057-3.136 0.927-4.148 2.102-0.898 1.05-1.677 2.716-1.463 4.305 1.554 0.12 3.149-0.781 4.165-1.975z" fill="currentColor" />
-          </svg>
-          Continue with Apple
-        </button>
+        {error && (
+          <div style={{ marginTop: 16, padding: "10px 14px", background: "rgba(255,80,80,0.12)", border: "1px solid rgba(255,80,80,0.25)", borderRadius: 10, color: "#ff6b6b", fontSize: 13, textAlign: "center", width: "100%" }}>
+            {error}
+          </div>
+        )}
       </div>
     </motion.div>
   );
@@ -408,14 +477,70 @@ function LoginScreen({ onContinue }: { onContinue: () => void }) {
 
 function PickerScreen() {
   const username = useAppStore((state) => state.username);
-  const groupId = useAppStore((state) => state.groupId);
-  const setUsername = useAppStore((state) => state.setUsername);
+  const token = useAppStore((state) => state.token);
   const setGroupId = useAppStore((state) => state.setGroupId);
   const setScreen = useAppStore((state) => state.setScreen);
-  const setToken = useAppStore((state) => state.setToken);
-  const [pickerError, setPickerError] = useState<string | null>(null);
+  const resetSession = useAppStore((state) => state.resetSession);
 
-  const canStart = username.trim() && groupId.trim();
+  const [isCreatingRoom, setIsCreatingRoom] = useState(false);
+  const [roomID, setRoomID] = useState("");
+  const [roomPassword, setRoomPassword] = useState("");
+  const [generatedID, setGeneratedID] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (isCreatingRoom) {
+      const generated = Math.floor(100 + Math.random() * 900).toString();
+      setGeneratedID(generated);
+    } else {
+      setGeneratedID("");
+    }
+    setError(null);
+  }, [isCreatingRoom]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const finalRoomID = isCreatingRoom ? generatedID : roomID.trim();
+    if (!finalRoomID || !roomPassword.trim()) {
+      setError("Please fill in all fields.");
+      return;
+    }
+    setError(null);
+    setLoading(true);
+
+    try {
+      const host = import.meta.env.VITE_WS_HOST || window.location.host;
+      const protocol = window.location.protocol === "https:" ? "https:" : "http:";
+      const endpoint = isCreatingRoom ? "/api/rooms" : "/api/rooms/join";
+      
+      const body = { id: finalRoomID, password: roomPassword };
+
+      const response = await fetch(`${protocol}//${host}${endpoint}`, {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error?.message || data.message || data.error || "Failed to process room request");
+      }
+
+      setGroupId(finalRoomID);
+      setScreen("map");
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Could not connect to the server.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isFormValid = (isCreatingRoom ? generatedID : roomID.trim()) && roomPassword.trim();
 
   return (
     <motion.div
@@ -426,55 +551,76 @@ function PickerScreen() {
       className="picker-screen"
     >
       <div className="onboarding-card">
-        <h2>Join or create a room</h2>
-        <p>Share the room name with your group</p>
+        <h2>Hi, {username}!</h2>
+        <p style={{ marginBottom: 24, color: "var(--ink-soft)" }}>
+          {isCreatingRoom 
+            ? "Create a secure room with a 3-digit Room ID"
+            : "Enter a Room ID and Password to join the session"}
+        </p>
 
-        <input
-          className="setup-input"
-          placeholder="Your name e.g. Rahul"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-        />
-        <input
-          className="setup-input"
-          placeholder="Room ID e.g. goa-trip-20"
-          value={groupId}
-          onChange={(e) => setGroupId(e.target.value)}
-        />
+        <form onSubmit={handleSubmit}>
+          {isCreatingRoom ? (
+            <div className="input-wrapper" style={{ marginBottom: 16 }}>
+              <input
+                className="setup-input"
+                value={`Room ID: ${generatedID}`}
+                disabled
+                style={{ opacity: 0.8, fontWeight: 700, textAlign: "center", background: "var(--bg-panel-strong)" }}
+              />
+            </div>
+          ) : (
+            <div className="input-wrapper">
+              <input
+                className="setup-input"
+                placeholder="Enter Room ID"
+                value={roomID}
+                onChange={(e) => setRoomID(e.target.value)}
+                required
+              />
+            </div>
+          )}
 
-        <button
-          className="continue-btn"
-          onClick={async () => {
-            if (!canStart) {
-              setPickerError("Please enter a Username and Room ID to start.");
-              return;
-            }
-            setPickerError(null);
-            try {
-              const host = import.meta.env.VITE_WS_HOST || window.location.host;
-              const protocol = window.location.protocol === "https:" ? "https:" : "http:";
-              const response = await fetch(`${protocol}//${host}/login?username=${encodeURIComponent(username)}`, {
-                method: "POST",
-              });
-              if (!response.ok) throw new Error("Auth failed");
-              const data = await response.json();
-              setToken(data.token);
-              setScreen("map");
-            } catch (err) {
-              console.error(err);
-              setPickerError("Could not connect to the server.");
-            }
-          }}
-          disabled={!canStart}
-        >
-          Start sharing location &rarr;
-        </button>
-        <div className="onboarding-footer">
-          No account needed &middot; end-to-end ephemeral
+          <div className="input-wrapper">
+            <input
+              type="password"
+              className="setup-input"
+              placeholder="Enter Room Password"
+              value={roomPassword}
+              onChange={(e) => setRoomPassword(e.target.value)}
+              required
+            />
+          </div>
+
+          <button
+            className="continue-btn"
+            type="submit"
+            disabled={!isFormValid || loading}
+          >
+            {loading ? "Please wait..." : isCreatingRoom ? "Create Room & Start" : "Join Room & Start"}
+          </button>
+        </form>
+
+        <div style={{ marginTop: 16, textAlign: "center", fontSize: 14 }}>
+          <button
+            style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", textDecoration: "underline", fontWeight: 600 }}
+            onClick={() => setIsCreatingRoom(!isCreatingRoom)}
+          >
+            {isCreatingRoom ? "Already have a Room ID? Join Room" : "Need a new room? Create Room"}
+          </button>
         </div>
-        {pickerError && (
+
+        <div style={{ marginTop: 16, textAlign: "center", fontSize: 13 }}>
+          <button
+            style={{ background: "none", border: "none", color: "var(--ink-soft)", cursor: "pointer", textDecoration: "underline" }}
+            onClick={() => resetSession()}
+          >
+            Log Out
+          </button>
+        </div>
+
+        {error && (
           <div style={{ marginTop: 12, padding: "8px 12px", background: "rgba(255,80,80,0.12)", border: "1px solid rgba(255,80,80,0.25)", borderRadius: 8, color: "#ff6b6b", fontSize: 13, textAlign: "center" }}>
-            {pickerError}
+            {error}
           </div>
         )}
       </div>
@@ -492,6 +638,7 @@ function formatTimeAgo(ts: number): string {
 
 function MapScreen() {
   const username = useAppStore((state) => state.username);
+  const userID = useAppStore((state) => state.userID);
   const groupId = useAppStore((state) => state.groupId);
   const location = useAppStore((state) => state.location);
   const peers = useAppStore((state) => state.peers);
@@ -516,9 +663,9 @@ function MapScreen() {
   const setRoutePreview = useAppStore((state) => state.setRoutePreview);
   const alerts = useAppStore((state) => state.alerts);
   const activePeerAlerts = useMemo(() => {
-    return Object.values(alerts).filter((a) => a.userID !== username);
-  }, [alerts, username]);
-  const isSelfAlerting = !!alerts[username];
+    return Object.values(alerts).filter((a) => a.userID !== userID);
+  }, [alerts, userID]);
+  const isSelfAlerting = !!alerts[userID];
 
   const ws = useRef<WebSocket | null>(null);
   const [, setTick] = useState(0);
@@ -677,7 +824,7 @@ function MapScreen() {
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const newLoc: LocationData = {
-          userID: username,
+          userID: userID,
           groupID: groupId,
           lat: parseFloat(pos.coords.latitude.toFixed(5)),
           lng: parseFloat(pos.coords.longitude.toFixed(5)),
@@ -702,7 +849,7 @@ function MapScreen() {
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [username, groupId, sim.active, setLocation]);
+  }, [username, userID, groupId, sim.active, setLocation]);
 
   const fallbackRouteLine = useMemo(() => {
     if (!sim.route) return [];
@@ -750,7 +897,7 @@ function MapScreen() {
     }>;
 
     const ids = new Set(trip.participants);
-    ids.add(username);
+    ids.add(userID);
 
     const next: Array<{
       id: string;
@@ -762,7 +909,7 @@ function MapScreen() {
     }> = [];
 
     ids.forEach((id) => {
-      if (id === username) {
+      if (id === userID) {
         if (!location) return;
         next.push({
           id,
@@ -789,7 +936,7 @@ function MapScreen() {
     });
 
     return next;
-  }, [trip, username, location, peers]);
+  }, [trip, username, userID, location, peers]);
 
   const participantRouteLocations = useMemo(() => {
     if (!trip) return [] as typeof participantLocations;
@@ -902,7 +1049,7 @@ function MapScreen() {
           ? getLinePosition(routeLine, newDist)
           : getRoutePosition(sim.route!, newDist);
       const newLoc: LocationData = {
-        userID: username,
+        userID: userID,
         groupID: groupId,
         lat: parseFloat(pos.lat.toFixed(5)),
         lng: parseFloat(pos.lng.toFixed(5)),
@@ -924,6 +1071,7 @@ function MapScreen() {
     routeLine,
     routeLengthMeters,
     username,
+    userID,
     groupId,
     setLocation,
     setSimProgress,
@@ -981,7 +1129,7 @@ function MapScreen() {
             setTrip(decoded);
             useAppStore.getState().setRoutePreview(null);
             requestFitBounds([decoded.origin, decoded.dest]);
-            if (tripData.creatorID !== username) {
+            if (tripData.creatorID !== userID) {
               sendWsMessage("trip_join");
             }
           } else if (currentTrip) {
@@ -1012,7 +1160,7 @@ function MapScreen() {
             case "location":
               if (data.offline) {
                 removePeer(data.userID);
-              } else if (data.userID !== username) {
+              } else if (data.userID !== userID) {
                 upsertPeer(data);
               }
               break;
@@ -1035,7 +1183,7 @@ function MapScreen() {
               setTrip(tripData);
               useAppStore.getState().setRoutePreview(null);
               requestFitBounds([tripData.origin, tripData.dest]);
-              if (data.creatorID !== username) {
+              if (data.creatorID !== userID) {
                 sendWsMessage("trip_join");
               }
               break;
@@ -1114,7 +1262,7 @@ function MapScreen() {
       ws.current = null;
       setWs(null);
     };
-  }, [groupId, username]);
+  }, [groupId, username, userID]);
 
   // Tick timer for "time ago" updates
   useEffect(() => {

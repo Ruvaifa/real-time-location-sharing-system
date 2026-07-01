@@ -65,6 +65,61 @@ func (s *PostgresStore) UpsertUser(ctx context.Context, userID, name string) err
 	return err
 }
 
+// GetUser retrieves a user's name and email by their ID.
+func (s *PostgresStore) GetUser(ctx context.Context, userID string) (string, string, error) {
+	var name string
+	var email sql.NullString
+	err := s.db.QueryRowContext(ctx, `
+		SELECT name, email
+		FROM users
+		WHERE id = $1
+	`, userID).Scan(&name, &email)
+	if err != nil {
+		return "", "", err
+	}
+	return name, email.String, nil
+}
+
+// GetUserByEmail retrieves a user's details and password hash by their email.
+func (s *PostgresStore) GetUserByEmail(ctx context.Context, email string) (string, string, string, error) {
+	var id, name, hash string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, name, password_hash
+		FROM users
+		WHERE email = $1
+	`, email).Scan(&id, &name, &hash)
+	return id, name, hash, err
+}
+
+// CreateUser inserts a new user record with email and password hash.
+func (s *PostgresStore) CreateUser(ctx context.Context, userID, name, email, passwordHash string) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO users (id, name, email, password_hash)
+		VALUES ($1, $2, $3, $4)
+	`, userID, name, email, passwordHash)
+	return err
+}
+
+// CreateRoom inserts a new room record.
+func (s *PostgresStore) CreateRoom(ctx context.Context, id, passwordHash, creatorID string) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO rooms (id, password_hash, creator_id)
+		VALUES ($1, $2, $3)
+	`, id, passwordHash, creatorID)
+	return err
+}
+
+// GetRoomPasswordHash retrieves the password hash for a specific room ID.
+func (s *PostgresStore) GetRoomPasswordHash(ctx context.Context, id string) (string, error) {
+	var hash string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT password_hash
+		FROM rooms
+		WHERE id = $1
+	`, id).Scan(&hash)
+	return hash, err
+}
+
 // InsertLocation stores a new location record.
 func (s *PostgresStore) InsertLocation(ctx context.Context, loc model.LocationMessage) error {
 	_, err := s.db.ExecContext(ctx, `

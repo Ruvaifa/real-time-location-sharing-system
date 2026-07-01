@@ -10,6 +10,11 @@ import (
 // Store defines database operations used by the app.
 type Store interface {
 	UpsertUser(ctx context.Context, userID, name string) error
+	GetUser(ctx context.Context, userID string) (name string, email string, err error)
+	GetUserByEmail(ctx context.Context, email string) (userID string, name string, passwordHash string, err error)
+	CreateUser(ctx context.Context, userID, name, email, passwordHash string) error
+	CreateRoom(ctx context.Context, id, passwordHash, creatorID string) error
+	GetRoomPasswordHash(ctx context.Context, id string) (string, error)
 	InsertLocation(ctx context.Context, loc model.LocationMessage) error
 	PruneLocations(ctx context.Context, retentionDays int) (int64, error)
 

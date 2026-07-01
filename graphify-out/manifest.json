@@ -20,14 +20,14 @@
     "semantic_hash": "80ab35bd166b05a2c2fe9651be4cb1b3"
   },
   "D:\\Python codes\\real-time-location-sharing-system\\backend\\internal\\handler\\chat.go": {
-    "mtime": 1781934175.9727356,
-    "ast_hash": "2e31c7da57537db0c839af65134620bb",
-    "semantic_hash": "2e31c7da57537db0c839af65134620bb"
+    "mtime": 1782145451.0151541,
+    "ast_hash": "b3e5467598f5b9ea5be1121434bd1236",
+    "semantic_hash": "b3e5467598f5b9ea5be1121434bd1236"
   },
   "D:\\Python codes\\real-time-location-sharing-system\\backend\\internal\\handler\\chat_test.go": {
-    "mtime": 1781798551.5565007,
-    "ast_hash": "5b52086c197c29a2ed4618fe69813449",
-    "semantic_hash": "5b52086c197c29a2ed4618fe69813449"
+    "mtime": 1782145454.0158212,
+    "ast_hash": "ac7ce3327cf113b9ecffe34c4cb3a4f3",
+    "semantic_hash": "ac7ce3327cf113b9ecffe34c4cb3a4f3"
   },
   "D:\\Python codes\\real-time-location-sharing-system\\backend\\internal\\handler\\trip.go": {
     "mtime": 1780754148.618671,
@@ -60,14 +60,14 @@
     "semantic_hash": "f92ae9b04f61f7d4f5f75f85c57ef577"
   },
   "D:\\Python codes\\real-time-location-sharing-system\\backend\\internal\\model\\chat.go": {
-    "mtime": 1781934115.21557,
-    "ast_hash": "7cda007cfe51bae373886a8878d42d03",
-    "semantic_hash": "7cda007cfe51bae373886a8878d42d03"
+    "mtime": 1782145382.637117,
+    "ast_hash": "a16f592e87a7673809ccd3ebbfb117a3",
+    "semantic_hash": "a16f592e87a7673809ccd3ebbfb117a3"
   },
   "D:\\Python codes\\real-time-location-sharing-system\\backend\\internal\\model\\envelope.go": {
-    "mtime": 1781798551.5554638,
-    "ast_hash": "7eccb1c694cc94df3845b502d1223f22",
-    "semantic_hash": "7eccb1c694cc94df3845b502d1223f22"
+    "mtime": 1782550721.9240572,
+    "ast_hash": "3b7848909a0df507cefe74127fe875e1",
+    "semantic_hash": "3b7848909a0df507cefe74127fe875e1"
   },
   "D:\\Python codes\\real-time-location-sharing-system\\backend\\internal\\model\\message.go": {
     "mtime": 1778305953.0477557,
@@ -125,19 +125,19 @@
     "semantic_hash": "27295255ab4da4c03e3115c19eeda75a"
   },
   "D:\\Python codes\\real-time-location-sharing-system\\backend\\internal\\storage\\postgres.go": {
-    "mtime": 1781934153.3882835,
-    "ast_hash": "d464e9c75aebb8bb86ef11b27e009774",
-    "semantic_hash": "d464e9c75aebb8bb86ef11b27e009774"
+    "mtime": 1782145432.9637775,
+    "ast_hash": "c0acc06009014688d7bbfda08e00fe0f",
+    "semantic_hash": "c0acc06009014688d7bbfda08e00fe0f"
   },
   "D:\\Python codes\\real-time-location-sharing-system\\backend\\internal\\storage\\store.go": {
-    "mtime": 1781798446.0867686,
-    "ast_hash": "95e4f38727189f67581d80f2096a7123",
-    "semantic_hash": "95e4f38727189f67581d80f2096a7123"
+    "mtime": 1782145396.252104,
+    "ast_hash": "f817ae03f2dbe551e4f073f5aabea253",
+    "semantic_hash": "f817ae03f2dbe551e4f073f5aabea253"
   },
   "D:\\Python codes\\real-time-location-sharing-system\\backend\\internal\\validate\\chat.go": {
-    "mtime": 1781934142.6758826,
-    "ast_hash": "508fc0b70cabab2ddda88dc3834cf372",
-    "semantic_hash": "508fc0b70cabab2ddda88dc3834cf372"
+    "mtime": 1782145387.8181496,
+    "ast_hash": "bf9f2c6ecc6ac12c681d529bce2d3e3c",
+    "semantic_hash": "bf9f2c6ecc6ac12c681d529bce2d3e3c"
   },
   "D:\\Python codes\\real-time-location-sharing-system\\backend\\internal\\validate\\chat_test.go": {
     "mtime": 1781934334.376777,
@@ -160,9 +160,9 @@
     "semantic_hash": "1cc175786a6052ab7327fd44cf75a592"
   },
   "D:\\Python codes\\real-time-location-sharing-system\\backend\\internal\\websocket\\hub.go": {
-    "mtime": 1781798551.5581417,
-    "ast_hash": "5cb531827d30819ae6abb5c735bc1433",
-    "semantic_hash": "5cb531827d30819ae6abb5c735bc1433"
+    "mtime": 1782550721.9325843,
+    "ast_hash": "5f703366934b4e2ad1bfdc7e8576d90a",
+    "semantic_hash": "5f703366934b4e2ad1bfdc7e8576d90a"
   },
   "D:\\Python codes\\real-time-location-sharing-system\\backend\\migrations\\0001_create_users_and_locations.down.sql": {
     "mtime": 1778305925.7992918,
@@ -230,9 +230,9 @@
     "semantic_hash": "c363ae9267c3a92917a810e98f4b107c"
   },
   "D:\\Python codes\\real-time-location-sharing-system\\frontend\\src\\App.tsx": {
-    "mtime": 1781791127.2237709,
-    "ast_hash": "790010d648f67e6a6af82d876cfc69b4",
-    "semantic_hash": "790010d648f67e6a6af82d876cfc69b4"
+    "mtime": 1782554354.0198343,
+    "ast_hash": "786851d57e57174d084a3c4d9691d055",
+    "semantic_hash": "786851d57e57174d084a3c4d9691d055"
   },
   "D:\\Python codes\\real-time-location-sharing-system\\frontend\\src\\components\\DestinationSearch.tsx": {
     "mtime": 1780769209.5592818,
@@ -245,9 +245,9 @@
     "semantic_hash": "1ac42b1cbcfb7e24afa8e15f1db8bc98"
   },
   "D:\\Python codes\\real-time-location-sharing-system\\frontend\\src\\components\\GroupChatPanel.tsx": {
-    "mtime": 1781934303.5276031,
-    "ast_hash": "92740f2697304d01ddb2831043097dcc",
-    "semantic_hash": "92740f2697304d01ddb2831043097dcc"
+    "mtime": 1782145518.1547627,
+    "ast_hash": "8fdcc2a4f99e0852a9634c133a9888d3",
+    "semantic_hash": "8fdcc2a4f99e0852a9634c133a9888d3"
   },
   "D:\\Python codes\\real-time-location-sharing-system\\frontend\\src\\components\\TripPanel.tsx": {
     "mtime": 1779721742.285805,
@@ -290,9 +290,9 @@
     "semantic_hash": "35834129dfdb69cd9be61e32391d4878"
   },
   "D:\\Python codes\\real-time-location-sharing-system\\frontend\\src\\lib\\chat.ts": {
-    "mtime": 1781934191.046709,
-    "ast_hash": "702fabd54c6ae819d62316e1a6c19e24",
-    "semantic_hash": "702fabd54c6ae819d62316e1a6c19e24"
+    "mtime": 1782145467.1181016,
+    "ast_hash": "ce03f53d30220f6c591554af961fc20d",
+    "semantic_hash": "ce03f53d30220f6c591554af961fc20d"
   },
   "D:\\Python codes\\real-time-location-sharing-system\\frontend\\src\\lib\\geocoding.ts": {
     "mtime": 1780753814.9049084,
@@ -320,9 +320,9 @@
     "semantic_hash": "2a6778a95fc17d7b5d00719361fb8dd4"
   },
   "D:\\Python codes\\real-time-location-sharing-system\\frontend\\src\\store\\useAppStore.ts": {
-    "mtime": 1781791127.2547452,
-    "ast_hash": "e26f5169084306bcca60329e3df3a8c0",
-    "semantic_hash": "e26f5169084306bcca60329e3df3a8c0"
+    "mtime": 1782553999.1807353,
+    "ast_hash": "29fec2c95ece8f51f761ba94160e6e1f",
+    "semantic_hash": "29fec2c95ece8f51f761ba94160e6e1f"
   },
   "D:\\Python codes\\real-time-location-sharing-system\\frontend\\src\\vite-env.d.ts": {
     "mtime": 1778155892.520204,
@@ -388,5 +388,15 @@
     "mtime": 1781934948.3275578,
     "ast_hash": "bda571115527920446b74b735576dcc8",
     "semantic_hash": "bda571115527920446b74b735576dcc8"
+  },
+  "D:\\Python codes\\real-time-location-sharing-system\\backend\\migrations\\0006_add_chat_messages_recipient_id.down.sql": {
+    "mtime": 1782144551.8230524,
+    "ast_hash": "77b2d9403e72517af2f804ecf25a6ebd",
+    "semantic_hash": "77b2d9403e72517af2f804ecf25a6ebd"
+  },
+  "D:\\Python codes\\real-time-location-sharing-system\\backend\\migrations\\0006_add_chat_messages_recipient_id.up.sql": {
+    "mtime": 1782144549.4606943,
+    "ast_hash": "3cc3cd4a80ff866943c669a600139673",
+    "semantic_hash": "3cc3cd4a80ff866943c669a600139673"
   }
 }
