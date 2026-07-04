@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Moon, Sun, Compass, Radio, Navigation, Route, ClipboardCopy, MessageSquare } from "lucide-react";
+import { Moon, Sun, Compass, Navigation, Share2, MessageSquare, type LucideIcon } from "lucide-react";
 import Maplibregl from "maplibre-gl";
 
 import "./styles.css";
-import { NavItem } from "./components/ui/bottom-nav-bar";
 import { GlobeAnalytics } from "./components/ui/cobe-globe-analytics";
 import {
   Map as MapView,
@@ -18,15 +17,50 @@ import {
 import { DestinationSearch } from "./components/DestinationSearch";
 import { GroupChatPanel } from "./components/GroupChatPanel";
 import { TripPanel } from "./components/TripPanel";
-import { LocationData, Route as RouteType, useAppStore, sendWsMessage } from "./store/useAppStore";
+import { LocationData, useAppStore, sendWsMessage } from "./store/useAppStore";
 import { getRoute } from "./lib/routing";
 import { fetchActiveTrip, parseRouteCoordinates } from "./lib/trip";
 import { normalizeChatMessage } from "./lib/chat";
+import { apiBaseUrl, wsUrl } from "./lib/api";
+
+type NavItem = {
+  id: string;
+  label: string;
+  icon: LucideIcon;
+};
 
 function buildWsUrl(groupId: string, token: string): string {
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const host = import.meta.env.VITE_WS_HOST || window.location.host;
-  return `${protocol}//${host}/ws/${groupId}?token=${token}`;
+  return wsUrl(`/ws/${groupId}?token=${token}`);
+}
+
+function getInviteParams(): { roomId: string; token: string } | null {
+  const params = new URLSearchParams(window.location.search);
+  const roomId = params.get("room")?.trim() || "";
+  const token = params.get("invite")?.trim() || "";
+  if (!roomId || !token) return null;
+  return { roomId, token };
+}
+
+function clearInviteParams() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("room");
+  url.searchParams.delete("invite");
+  window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
+async function readJsonResponse(response: Response) {
+  const text = await response.text();
+  if (!text.trim()) return null;
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { message: text.trim() };
+  }
+}
+
+function responseErrorMessage(data: any, fallback: string): string {
+  return data?.error?.message || data?.message || data?.error || fallback;
 }
 
 function mergeTripParticipants(
@@ -80,241 +114,10 @@ const MAP_STYLES = {
 } as const;
 const MAP_STYLE_ORDER: Array<keyof typeof MAP_STYLES> = ["dark", "light", "voyager"];
 
-const SIM_ROUTES: RouteType[] = [
-  {
-    id: "lodhi-garden-loop",
-    name: "Lodhi Garden Loop",
-    distanceKm: 4.2,
-    waypoints: [
-      [28.5914, 77.2270],
-      [28.5928, 77.2295],
-      [28.5950, 77.2310],
-      [28.5975, 77.2320],
-      [28.5995, 77.2305],
-      [28.6010, 77.2280],
-      [28.6005, 77.2250],
-      [28.5985, 77.2230],
-      [28.5960, 77.2225],
-      [28.5940, 77.2240],
-      [28.5914, 77.2270],
-    ],
-  },
-  {
-    id: "india-gate-rajpath",
-    name: "India Gate - Rajpath",
-    distanceKm: 5.8,
-    waypoints: [
-      [28.6129, 77.2295],
-      [28.6118, 77.2270],
-      [28.6100, 77.2240],
-      [28.6085, 77.2210],
-      [28.6070, 77.2185],
-      [28.6055, 77.2160],
-      [28.6040, 77.2130],
-      [28.6025, 77.2100],
-      [28.6010, 77.2075],
-      [28.5995, 77.2050],
-      [28.5980, 77.2030],
-    ],
-  },
-  {
-    id: "connaught-place-circuit",
-    name: "Connaught Place Circuit",
-    distanceKm: 3.1,
-    waypoints: [
-      [28.6315, 77.2167],
-      [28.6330, 77.2190],
-      [28.6345, 77.2215],
-      [28.6355, 77.2240],
-      [28.6345, 77.2265],
-      [28.6330, 77.2280],
-      [28.6310, 77.2275],
-      [28.6295, 77.2255],
-      [28.6285, 77.2230],
-      [28.6290, 77.2200],
-      [28.6315, 77.2167],
-    ],
-  },
-  {
-    id: "chanakyapuri-embassy",
-    name: "Chanakyapuri Embassy Row",
-    distanceKm: 6.5,
-    waypoints: [
-      [28.5975, 77.1880],
-      [28.5990, 77.1910],
-      [28.6010, 77.1940],
-      [28.6030, 77.1965],
-      [28.6055, 77.1985],
-      [28.6075, 77.1970],
-      [28.6090, 77.1945],
-      [28.6080, 77.1920],
-      [28.6060, 77.1895],
-      [28.6035, 77.1875],
-      [28.6010, 77.1860],
-      [28.5990, 77.1850],
-      [28.5975, 77.1880],
-    ],
-  },
-];
-
-const CYCLING_SPEED_KMH = 20;
-const TICK_INTERVAL_MS = 1000;
-const ROUTE_SERVICE_URL = "https://router.project-osrm.org/route/v1/driving";
-const ROUTE_FETCH_TIMEOUT_MS = 5000;
 const ROUTE_FETCH_MIN_DISTANCE_METERS = 50;
 const ROUTE_FETCH_MIN_INTERVAL_MS = 5000;
 
 type LineCoordinate = [number, number];
-
-function getRouteLengthMeters(route: RouteType): number {
-  let total = 0;
-  for (let i = 1; i < route.waypoints.length; i++) {
-    total += calculateDistance(
-      route.waypoints[i - 1][0], route.waypoints[i - 1][1],
-      route.waypoints[i][0], route.waypoints[i][1]
-    );
-  }
-  return total;
-}
-
-function getRoutePosition(
-  route: RouteType,
-  distanceMeters: number
-): { lat: number; lng: number; bearing: number } {
-  const wps = route.waypoints;
-  let remaining = distanceMeters;
-
-  for (let i = 1; i < wps.length; i++) {
-    const segLen = calculateDistance(
-      wps[i - 1][0], wps[i - 1][1],
-      wps[i][0], wps[i][1]
-    );
-
-    if (remaining <= segLen || i === wps.length - 1) {
-      const t = segLen > 0 ? Math.min(remaining / segLen, 1) : 0;
-      const lat = wps[i - 1][0] + (wps[i][0] - wps[i - 1][0]) * t;
-      const lng = wps[i - 1][1] + (wps[i][1] - wps[i - 1][1]) * t;
-      const bearing =
-        (Math.atan2(wps[i][1] - wps[i - 1][1], wps[i][0] - wps[i - 1][0]) *
-          180) /
-        Math.PI;
-      return { lat, lng, bearing };
-    }
-
-    remaining -= segLen;
-  }
-
-  const last = wps[wps.length - 1];
-  return { lat: last[0], lng: last[1], bearing: 0 };
-}
-
-function getLineLengthMeters(line: LineCoordinate[]): number {
-  if (line.length < 2) return 0;
-  let total = 0;
-  for (let i = 1; i < line.length; i++) {
-    total += calculateDistance(
-      line[i - 1][1],
-      line[i - 1][0],
-      line[i][1],
-      line[i][0]
-    );
-  }
-  return total;
-}
-
-function getLinePosition(
-  line: LineCoordinate[],
-  distanceMeters: number
-): { lat: number; lng: number; bearing: number } {
-  if (line.length < 2) {
-    return { lat: 0, lng: 0, bearing: 0 };
-  }
-
-  let remaining = distanceMeters;
-
-  for (let i = 1; i < line.length; i++) {
-    const segLen = calculateDistance(
-      line[i - 1][1],
-      line[i - 1][0],
-      line[i][1],
-      line[i][0]
-    );
-
-    if (remaining <= segLen || i === line.length - 1) {
-      const t = segLen > 0 ? Math.min(remaining / segLen, 1) : 0;
-      const lng = line[i - 1][0] + (line[i][0] - line[i - 1][0]) * t;
-      const lat = line[i - 1][1] + (line[i][1] - line[i - 1][1]) * t;
-      const bearing =
-        (Math.atan2(line[i][1] - line[i - 1][1], line[i][0] - line[i - 1][0]) *
-          180) /
-        Math.PI;
-      return { lat, lng, bearing };
-    }
-
-    remaining -= segLen;
-  }
-
-  const last = line[line.length - 1];
-  return { lat: last[1], lng: last[0], bearing: 0 };
-}
-
-function sliceLineByDistance(
-  line: LineCoordinate[],
-  distanceMeters: number
-): LineCoordinate[] {
-  if (line.length < 2) return line;
-  if (distanceMeters <= 0) return [line[0]];
-
-  const total = getLineLengthMeters(line);
-  if (distanceMeters >= total) return line;
-
-  let remaining = distanceMeters;
-  const sliced: LineCoordinate[] = [line[0]];
-
-  for (let i = 1; i < line.length; i++) {
-    const segLen = calculateDistance(
-      line[i - 1][1],
-      line[i - 1][0],
-      line[i][1],
-      line[i][0]
-    );
-
-    if (remaining <= segLen) {
-      const t = segLen > 0 ? Math.min(remaining / segLen, 1) : 0;
-      const lng = line[i - 1][0] + (line[i][0] - line[i - 1][0]) * t;
-      const lat = line[i - 1][1] + (line[i][1] - line[i - 1][1]) * t;
-      sliced.push([lng, lat]);
-      break;
-    }
-
-    sliced.push(line[i]);
-    remaining -= segLen;
-  }
-
-  return sliced;
-}
-
-async function fetchRoadRoute(waypoints: RouteType["waypoints"]): Promise<LineCoordinate[]> {
-  if (waypoints.length < 2) return [];
-
-  const coords = waypoints
-    .map(([lat, lng]) => `${lng.toFixed(5)},${lat.toFixed(5)}`)
-    .join(";");
-  const url = `${ROUTE_SERVICE_URL}/${coords}?overview=full&geometries=geojson&steps=false`;
-  const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), ROUTE_FETCH_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    if (!response.ok) throw new Error("Failed to fetch route");
-    const data = await response.json();
-    const route = data?.routes?.[0]?.geometry?.coordinates as LineCoordinate[] | undefined;
-    if (!route || route.length < 2) throw new Error("No route geometry returned");
-    return route;
-  } finally {
-    window.clearTimeout(timeoutId);
-  }
-}
 
 function getHashColor(name: string): string {
   let hash = 0;
@@ -332,6 +135,13 @@ function getInitials(name: string): string {
 
 export default function App() {
   const screen = useAppStore((state) => state.screen);
+  const token = useAppStore((state) => state.token);
+  const setScreen = useAppStore((state) => state.setScreen);
+
+  useEffect(() => {
+    if (!getInviteParams()) return;
+    setScreen(token ? "picker" : "login");
+  }, [setScreen, token]);
 
   return (
     <div className="mobile-app-container">
@@ -370,23 +180,21 @@ function LoginScreen() {
     setLoading(true);
 
     try {
-      const host = import.meta.env.VITE_WS_HOST || window.location.host;
-      const protocol = window.location.protocol === "https:" ? "https:" : "http:";
       const endpoint = isSignUp ? "/api/auth/signup" : "/api/auth/login";
       
       const body = isSignUp 
         ? { email, password, name }
         : { email, password };
 
-      const response = await fetch(`${protocol}//${host}${endpoint}`, {
+      const response = await fetch(`${apiBaseUrl()}${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
 
-      const data = await response.json();
+      const data = await readJsonResponse(response);
       if (!response.ok) {
-        throw new Error(data.error?.message || data.message || data.error || "Authentication failed");
+        throw new Error(responseErrorMessage(data, "Authentication failed"));
       }
 
       setToken(data.token);
@@ -499,6 +307,7 @@ function PickerScreen() {
   const [generatedID, setGeneratedID] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const inviteJoinStartedRef = useRef(false);
 
   useEffect(() => {
     if (isCreatingRoom) {
@@ -509,6 +318,40 @@ function PickerScreen() {
     }
     setError(null);
   }, [isCreatingRoom]);
+
+  useEffect(() => {
+    const invite = getInviteParams();
+    if (!invite || !token || inviteJoinStartedRef.current) return;
+
+    inviteJoinStartedRef.current = true;
+    setError(null);
+    setLoading(true);
+
+    fetch(`${apiBaseUrl()}/api/rooms/join-invite`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      },
+      body: JSON.stringify({ token: invite.token }),
+    })
+      .then(async (response) => {
+        const data = await readJsonResponse(response);
+        if (!response.ok) {
+          throw new Error(responseErrorMessage(data, "Failed to join room invite"));
+        }
+
+        setGroupId(data.roomId || invite.roomId);
+        clearInviteParams();
+        setScreen("map");
+      })
+      .catch((err: any) => {
+        console.error(err);
+        setError(err.message || "Could not join the shared room.");
+        inviteJoinStartedRef.current = false;
+      })
+      .finally(() => setLoading(false));
+  }, [setGroupId, setScreen, token]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -521,13 +364,11 @@ function PickerScreen() {
     setLoading(true);
 
     try {
-      const host = import.meta.env.VITE_WS_HOST || window.location.host;
-      const protocol = window.location.protocol === "https:" ? "https:" : "http:";
       const endpoint = isCreatingRoom ? "/api/rooms" : "/api/rooms/join";
       
       const body = { id: finalRoomID, password: roomPassword };
 
-      const response = await fetch(`${protocol}//${host}${endpoint}`, {
+      const response = await fetch(`${apiBaseUrl()}${endpoint}`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
@@ -536,9 +377,9 @@ function PickerScreen() {
         body: JSON.stringify(body),
       });
 
-      const data = await response.json();
+      const data = await readJsonResponse(response);
       if (!response.ok) {
-        throw new Error(data.error?.message || data.message || data.error || "Failed to process room request");
+        throw new Error(responseErrorMessage(data, "Failed to process room request"));
       }
 
       setGroupId(finalRoomID);
@@ -660,10 +501,6 @@ function MapScreen() {
   const clearLiveData = useAppStore((state) => state.clearLiveData);
   const setScreen = useAppStore((state) => state.setScreen);
   const token = useAppStore((state) => state.token);
-  const sim = useAppStore((state) => state.sim);
-  const startSim = useAppStore((state) => state.startSim);
-  const stopSim = useAppStore((state) => state.stopSim);
-  const setSimProgress = useAppStore((state) => state.setSimProgress);
   const trip = useAppStore((state) => state.trip);
   const setTrip = useAppStore((state) => state.setTrip);
   const setWs = useAppStore((state) => state.setWs);
@@ -684,12 +521,7 @@ function MapScreen() {
   const [view, setView] = useState<"globe" | "map">("globe");
   const [chatOpen, setChatOpen] = useState(true);
   const [mapStyle, setMapStyle] = useState<keyof typeof MAP_STYLES>("dark");
-  const [showRoutePicker, setShowRoutePicker] = useState(false);
   const [locatedPeers, setLocatedPeers] = useState<Record<string, boolean>>({});
-  const [routePath, setRoutePath] = useState<LineCoordinate[]>([]);
-  const [routePathStatus, setRoutePathStatus] = useState<
-    "idle" | "loading" | "ready" | "error"
-  >("idle");
   const [participantRoutes, setParticipantRoutes] = useState<Record<string, LineCoordinate[]>>({});
   const [hiddenParticipantRouteIds, setHiddenParticipantRouteIds] = useState<Set<string>>(new Set());
   const [wsStatus, setWsStatus] = useState<"connecting" | "connected" | "disconnected">("connecting");
@@ -749,18 +581,6 @@ function MapScreen() {
     ],
     []
   );
-  const toggleSimulate = useCallback(
-    (route: RouteType) => {
-      if (sim.active) {
-        stopSim();
-      } else {
-        startSim(route);
-      }
-      setShowRoutePicker(false);
-    },
-    [sim.active, startSim, stopSim]
-  );
-
   const toggleSOS = useCallback(() => {
     sendWsMessage("alert", {
       alerting: !isSelfAlerting,
@@ -814,6 +634,31 @@ function MapScreen() {
     }
   }, [peers, location, setRoutePreview, requestFitBounds]);
 
+  const handleShareRoom = useCallback(async () => {
+    if (!groupId) return;
+
+    try {
+      const response = await fetch(`${apiBaseUrl()}/api/rooms/${encodeURIComponent(groupId)}/invite`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+      });
+      const data = await readJsonResponse(response);
+      if (!response.ok) {
+        throw new Error(responseErrorMessage(data, "Could not create room invite"));
+      }
+
+      const url = new URL(window.location.href);
+      url.searchParams.set("room", data.roomId || groupId);
+      url.searchParams.set("invite", data.token);
+      await navigator.clipboard.writeText(url.toString());
+    } catch (err) {
+      console.error("Failed to copy room invite:", err);
+    }
+  }, [groupId, token]);
+
   useEffect(() => {
     setLocatedPeers((prev) => {
       const next = { ...prev };
@@ -828,74 +673,12 @@ function MapScreen() {
     });
   }, [alerts]);
 
-  useEffect(() => {
-    let isStale = false;
-
-    if (!sim.active || !sim.route) {
-      setRoutePath([]);
-      setRoutePathStatus("idle");
-      return () => {
-        isStale = true;
-      };
-    }
-
-    setRoutePathStatus("loading");
-
-    fetchRoadRoute(sim.route.waypoints)
-      .then((path) => {
-        if (isStale) return;
-        setRoutePath(path);
-        setRoutePathStatus("ready");
-      })
-      .catch(() => {
-        if (isStale) return;
-        setRoutePath([]);
-        setRoutePathStatus("error");
-      });
-
-    return () => {
-      isStale = true;
-    };
-  }, [sim.active, sim.route?.id]);
-
   // Geolocation tracking
   useEffect(() => {
-    if (sim.active) return;
-
-    // ── DEMO FALLBACK START ──────────────────────────────────────────────────
-    // Remove this block once HTTPS/domain is configured — geolocation will work natively.
-    const setFallbackLocation = () => {
-      // Random position within central Delhi bounds
-      const DELHI_BOUNDS = {
-        latMin: 28.5800, latMax: 28.6400,
-        lngMin: 77.1850, lngMax: 77.2400,
-      };
-      const randomLat = DELHI_BOUNDS.latMin + Math.random() * (DELHI_BOUNDS.latMax - DELHI_BOUNDS.latMin);
-      const randomLng = DELHI_BOUNDS.lngMin + Math.random() * (DELHI_BOUNDS.lngMax - DELHI_BOUNDS.lngMin);
-
-      const fallback: LocationData = {
-        userID,
-        groupID: groupId,
-        lat: parseFloat(randomLat.toFixed(5)),
-        lng: parseFloat(randomLng.toFixed(5)),
-        name: username,
-        timestamp: Date.now(),
-        speed: 0,
-      };
-      setLocation(fallback);
-      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-        ws.current.send(JSON.stringify({ type: "location", payload: fallback }));
-      }
-    };
-    // ── DEMO FALLBACK END ────────────────────────────────────────────────────
-
-    // ── DEMO FALLBACK START ──────────────────────────────────────────────────
     if (!navigator.geolocation) {
-      console.warn("Geolocation not supported — using fallback location");
-      setFallbackLocation();
+      console.warn("Geolocation is not supported by this browser.");
       return;
     }
-    // ── DEMO FALLBACK END ────────────────────────────────────────────────────
 
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
@@ -915,10 +698,7 @@ function MapScreen() {
         }
       },
       (error) => {
-        // ── DEMO FALLBACK START ──────────────────────────────────────────────
-        console.warn("Geolocation error (likely non-HTTPS) — using fallback:", error.message);
-        setFallbackLocation();
-        // ── DEMO FALLBACK END ────────────────────────────────────────────────
+        console.warn("Geolocation error:", error.message);
       },
       {
         enableHighAccuracy: true,
@@ -928,42 +708,14 @@ function MapScreen() {
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [username, userID, groupId, sim.active, setLocation]);
+  }, [username, userID, groupId, setLocation]);
 
-  const fallbackRouteLine = useMemo(() => {
-    if (!sim.route) return [];
-    return sim.route.waypoints.map(([lat, lng]) => [lng, lat] as LineCoordinate);
-  }, [sim.route]);
-
-  const routeLine = useMemo(() => {
-    if (routePath.length >= 2) return routePath;
-    return fallbackRouteLine;
-  }, [routePath, fallbackRouteLine]);
-
-  const routeLengthMeters = useMemo(() => {
-    return getLineLengthMeters(routeLine);
-  }, [routeLine]);
-
-  const completedRouteLine = useMemo(() => {
-    if (!sim.active || routeLine.length < 2) return [];
-    return sliceLineByDistance(routeLine, sim.progress);
-  }, [sim.active, routeLine, sim.progress]);
-
-  const simProgressPct =
-    sim.active && routeLengthMeters > 0
-      ? ((sim.progress / routeLengthMeters) * 100).toFixed(0)
-      : "0";
   const statusColor =
     wsStatus === "connected"
       ? "var(--status-good)"
       : wsStatus === "connecting"
         ? "var(--status-warn)"
         : "var(--status-bad)";
-
-  const routeCoordinates = useMemo(() => {
-    if (!sim.active || routeLine.length < 2) return [];
-    return routeLine;
-  }, [sim.active, routeLine]);
 
   const participantLocations = useMemo(() => {
     if (!trip) return [] as Array<{
@@ -1104,58 +856,6 @@ function MapScreen() {
         });
     });
   }, [trip, participantRouteLocations]);
-
-  // Simulation tick
-  useEffect(() => {
-    if (!sim.active || !sim.route) return;
-
-    const totalDistance = routeLengthMeters || getRouteLengthMeters(sim.route);
-    if (!totalDistance) return;
-    const speedMs = CYCLING_SPEED_KMH / 3.6;
-    const distancePerTick = speedMs * (TICK_INTERVAL_MS / 1000);
-
-    const interval = setInterval(() => {
-      const currentProgress = useAppStore.getState().sim.progress;
-      let newDist = currentProgress + distancePerTick;
-
-      if (newDist >= totalDistance) {
-        newDist = 0;
-      }
-
-      setSimProgress(newDist);
-
-      const pos =
-        routeLine.length >= 2
-          ? getLinePosition(routeLine, newDist)
-          : getRoutePosition(sim.route!, newDist);
-      const newLoc: LocationData = {
-        userID: userID,
-        groupID: groupId,
-        lat: parseFloat(pos.lat.toFixed(5)),
-        lng: parseFloat(pos.lng.toFixed(5)),
-        name: username,
-        timestamp: Date.now(),
-        speed: speedMs,
-      };
-      setLocation(newLoc);
-
-      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-        ws.current.send(JSON.stringify({ type: "location", payload: newLoc }));
-      }
-    }, TICK_INTERVAL_MS);
-
-    return () => clearInterval(interval);
-  }, [
-    sim.active,
-    sim.route,
-    routeLine,
-    routeLengthMeters,
-    username,
-    userID,
-    groupId,
-    setLocation,
-    setSimProgress,
-  ]);
 
   // WebSocket connection
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1358,7 +1058,6 @@ function MapScreen() {
     return () => clearInterval(interval);
   }, []);
 
-  // Reset pan tracking when simulation toggles
   useEffect(() => {
     if (wsStatus !== "connected") {
       initialLocationPublishedRef.current = false;
@@ -1371,13 +1070,6 @@ function MapScreen() {
     ws.current.send(JSON.stringify({ type: "location", payload: location }));
     initialLocationPublishedRef.current = true;
   }, [wsStatus, location]);
-
-  useEffect(() => {
-    if (sim.active) {
-      initialFixDoneRef.current = false;
-      hasPannedRef.current = false;
-    }
-  }, [sim.active]);
 
   const activePeers = peerEntries.filter(([, peer]) => Date.now() - peer.timestamp < 60000).length;
   const lastPulse = location ? formatTimeAgo(location.timestamp) : "awaiting GPS";
@@ -1435,20 +1127,6 @@ function MapScreen() {
                   style={{ backgroundColor: statusColor }}
                 />
                 <span>Room {groupId}</span>
-                {sim.active && (
-                  <>
-                    <span className="chip-separator">|</span>
-                    <span className="chip-accent">
-                      SIM {simProgressPct}%
-                    </span>
-                  </>
-                )}
-                {sim.active && routePathStatus === "loading" && (
-                  <>
-                    <span className="chip-separator">|</span>
-                    <span className="chip-muted">Routing...</span>
-                  </>
-                )}
                 <span className="chip-separator">|</span>
                 <span>{activePeers + 1} live</span>
               </div>
@@ -1497,64 +1175,23 @@ function MapScreen() {
                 </button>
                 <button
                   className="map-pill-btn"
-                  onClick={() => {
-                    if (groupId) {
-                      navigator.clipboard.writeText(groupId).catch(() => undefined);
-                    }
-                  }}
-                  title="Copy room code"
+                  onClick={handleShareRoom}
+                  title="Copy room invite link"
                 >
-                  <ClipboardCopy size={15} />
+                  <Share2 size={15} />
                   Room
                 </button>
                 <button
-                  className={`map-pill-btn ${chatOpen ? "sim-active" : ""}`}
+                  className={`map-pill-btn ${chatOpen ? "map-pill-active" : ""}`}
                   onClick={() => setChatOpen((value) => !value)}
                   title="Toggle chat panel"
                 >
                   <MessageSquare size={14} />
                   Chat
                 </button>
-                <div className="sim-btn-wrap">
-                  <button
-                    className={`map-pill-btn ${sim.active ? "sim-active" : ""}`}
-                    onClick={() => {
-                      if (sim.active) {
-                        stopSim();
-                      } else {
-                        setShowRoutePicker(!showRoutePicker);
-                      }
-                    }}
-                  >
-                    <Radio size={14} />
-                    {sim.active ? "Stop" : "Sim"}
-                  </button>
-                  {showRoutePicker && !sim.active && (
-                    <>
-                      <div className="modal-backdrop" onClick={() => setShowRoutePicker(false)} />
-                      <div className="route-picker">
-                        <div className="route-picker-header">Choose a route</div>
-                        {SIM_ROUTES.map((route) => (
-                          <button
-                            key={route.id}
-                            className="route-option"
-                            onClick={() => toggleSimulate(route)}
-                          >
-                            <Route size={14} />
-                            <div className="route-option-info">
-                              <span className="route-option-name">{route.name}</span>
-                              <span className="route-option-dist">{route.distanceKm} km</span>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
                 <button
                   className="map-pill-btn danger"
                   onClick={() => {
-                    stopSim();
                     clearLiveData();
                     setScreen("picker");
                   }}
@@ -1617,30 +1254,6 @@ function MapScreen() {
                   mapRef={mapRef}
                   fitBounds={fitBounds}
                 />
-
-                {sim.active && routeCoordinates.length >= 2 && (
-                  <>
-                    <MapRoute
-                      id="sim-route-dashed"
-                      coordinates={routeCoordinates}
-                      color={ROUTE_COLOR}
-                      width={4}
-                      opacity={0.4}
-                      dashArray={[2, 8]}
-                      interactive={false}
-                    />
-                    {completedRouteLine.length >= 2 && (
-                      <MapRoute
-                        id="sim-route-complete"
-                        coordinates={completedRouteLine}
-                        color={ROUTE_COLOR}
-                        width={5}
-                        opacity={0.95}
-                        interactive={false}
-                      />
-                    )}
-                  </>
-                )}
 
                 {routePreview && (routePreview.isSos || !trip) && routePreview.coordinates.length >= 2 && (
                   <>

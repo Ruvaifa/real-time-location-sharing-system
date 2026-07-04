@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
+	"golang.org/x/crypto/bcrypt"
+
 	appmw "location-sharing-backend/internal/middleware"
 	"location-sharing-backend/pkg/apierr"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type signupRequest struct {
@@ -147,6 +149,18 @@ type roomRequest struct {
 	Password string `json:"password"`
 }
 
+type roomInviteRequest struct {
+	Token string `json:"token"`
+}
+
+func randomHex(bytes int) (string, error) {
+	b := make([]byte, bytes)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
 // CreateRoom handles room creation with a password.
 func (h *Handler) CreateRoom(w http.ResponseWriter, r *http.Request) {
 	userID, ok := appmw.GetUserID(r.Context())
@@ -242,4 +256,88 @@ func (h *Handler) JoinRoom(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+// CreateRoomInvite returns a reusable invite token for a room member.
+func (h *Handler) CreateRoomInvite(w http.ResponseWriter, r *http.Request) {
+	userID, ok := appmw.GetUserID(r.Context())
+	if !ok || userID == "" {
+		apierr.Render(w, http.StatusUnauthorized, "UNAUTHORIZED", "User must be authenticated")
+		return
+	}
+
+	roomID := strings.TrimSpace(chi.URLParam(r, "roomID"))
+	if roomID == "" {
+		apierr.Render(w, http.StatusBadRequest, "INVALID_INPUT", "Room ID is required")
+		return
+	}
+
+	isMember, err := h.hub.Store.IsRoomMember(r.Context(), roomID, userID)
+	if err != nil {
+		slog.Error("Failed to check room membership before invite", "room", roomID, "user", userID, "error", err)
+		apierr.Render(w, http.StatusInternalServerError, "DB_ERROR", "Could not verify room membership")
+		return
+	}
+	if !isMember {
+		apierr.Render(w, http.StatusForbidden, "FORBIDDEN", "Join the room before sharing it")
+		return
+	}
+
+	candidate, err := randomHex(24)
+	if err != nil {
+		slog.Error("Failed to create invite token", "room", roomID, "error", err)
+		apierr.Render(w, http.StatusInternalServerError, "INVITE_ERROR", "Could not create invite")
+		return
+	}
+
+	token, err := h.hub.Store.GetOrCreateRoomInvite(r.Context(), roomID, candidate)
+	if err != nil {
+		slog.Error("Failed to persist invite token", "room", roomID, "error", err)
+		apierr.Render(w, http.StatusInternalServerError, "INVITE_ERROR", "Could not create invite")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"roomId": roomID, "token": token})
+}
+
+// JoinRoomInvite joins a room using a share invite token.
+func (h *Handler) JoinRoomInvite(w http.ResponseWriter, r *http.Request) {
+	userID, ok := appmw.GetUserID(r.Context())
+	if !ok || userID == "" {
+		apierr.Render(w, http.StatusUnauthorized, "UNAUTHORIZED", "User must be authenticated")
+		return
+	}
+
+	var req roomInviteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierr.Render(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
+		return
+	}
+
+	req.Token = strings.TrimSpace(req.Token)
+	if req.Token == "" {
+		apierr.Render(w, http.StatusBadRequest, "INVALID_INPUT", "Invite token is required")
+		return
+	}
+
+	roomID, err := h.hub.Store.GetRoomByInviteToken(r.Context(), req.Token)
+	if err != nil {
+		apierr.Render(w, http.StatusNotFound, "INVITE_NOT_FOUND", "Invite link is invalid")
+		return
+	}
+
+	name, _, err := h.hub.Store.GetUser(r.Context(), userID)
+	if err != nil {
+		name = userID
+	}
+
+	if err := h.hub.Store.UpsertRoomMember(r.Context(), roomID, userID, name); err != nil {
+		slog.Error("Failed to join room via invite", "room", roomID, "user", userID, "error", err)
+		apierr.Render(w, http.StatusInternalServerError, "JOIN_ROOM_FAILED", "Could not join room")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "roomId": roomID})
 }

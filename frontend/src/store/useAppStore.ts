@@ -26,19 +26,6 @@ export interface AlertData {
   timestamp: number;
 }
 
-export interface Route {
-  id: string;
-  name: string;
-  distanceKm: number;
-  waypoints: [number, number][];
-}
-
-interface SimState {
-  active: boolean;
-  route: Route | null;
-  progress: number;
-}
-
 export interface TripData {
   id: string;
   creatorID: string;
@@ -82,7 +69,6 @@ interface AppStore {
   peers: Record<string, LocationData>;
   token: string;
   user: UserProfile | null;
-  sim: SimState;
   trip: TripData | null;
   ws: WebSocket | null;
   fitBounds: FitBounds | null;
@@ -101,9 +87,6 @@ interface AppStore {
   clearLiveData: () => void;
   resetSession: () => void;
   removePeer: (userID: string) => void;
-  startSim: (route: Route) => void;
-  stopSim: () => void;
-  setSimProgress: (progress: number) => void;
   setTrip: (trip: TripData | null) => void;
   updateTripParticipants: (participants: string[]) => void;
   setTripStatus: (status: TripData["status"]) => void;
@@ -138,7 +121,6 @@ export const useAppStore = create<AppStore>()(
       peers: {},
       token: "",
       user: null,
-      sim: { active: false, route: null, progress: 0 },
       trip: null,
       ws: null,
       fitBounds: null,
@@ -178,18 +160,11 @@ export const useAppStore = create<AppStore>()(
           peers: {},
           token: "",
           user: null,
-          sim: { active: false, route: null, progress: 0 },
           trip: null,
           routePreview: null,
           chatMessages: [],
           alerts: {},
         }),
-      startSim: (route) =>
-        set({ sim: { active: true, route, progress: 0 } }),
-      stopSim: () =>
-        set({ sim: { active: false, route: null, progress: 0 } }),
-      setSimProgress: (progress) =>
-        set((state) => ({ sim: { ...state.sim, progress } })),
       setTrip: (trip) => set({ trip }),
       updateTripParticipants: (participants) =>
         set((state) => {

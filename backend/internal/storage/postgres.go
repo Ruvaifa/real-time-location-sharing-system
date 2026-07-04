@@ -120,6 +120,35 @@ func (s *PostgresStore) GetRoomPasswordHash(ctx context.Context, id string) (str
 	return hash, err
 }
 
+// GetOrCreateRoomInvite returns the stable invite token for a room.
+func (s *PostgresStore) GetOrCreateRoomInvite(ctx context.Context, roomID, token string) (string, error) {
+	var inviteToken string
+	err := s.db.QueryRowContext(ctx, `
+		WITH inserted AS (
+			INSERT INTO room_invites (room_id, token)
+			VALUES ($1, $2)
+			ON CONFLICT (room_id) DO NOTHING
+			RETURNING token
+		)
+		SELECT token FROM inserted
+		UNION ALL
+		SELECT token FROM room_invites WHERE room_id = $1
+		LIMIT 1
+	`, roomID, token).Scan(&inviteToken)
+	return inviteToken, err
+}
+
+// GetRoomByInviteToken returns the room attached to an invite token.
+func (s *PostgresStore) GetRoomByInviteToken(ctx context.Context, token string) (string, error) {
+	var roomID string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT room_id
+		FROM room_invites
+		WHERE token = $1
+	`, token).Scan(&roomID)
+	return roomID, err
+}
+
 // InsertLocation stores a new location record.
 func (s *PostgresStore) InsertLocation(ctx context.Context, loc model.LocationMessage) error {
 	_, err := s.db.ExecContext(ctx, `

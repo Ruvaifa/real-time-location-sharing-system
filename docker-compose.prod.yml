@@ -43,23 +43,33 @@ services:
       MAX_GROUP_SIZE: 64
       MAX_MSG_RATE: 10
       LOCATION_RETENTION_DAYS: 7
-    ports:
-      - "8080:8080"
     depends_on:
       db:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+    volumes:
+      - uploads_data:/app/uploads
 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile.prod
+  caddy:
+    image: caddy:2-alpine
     restart: unless-stopped
+    environment:
+      BACKEND_HOST: ${BACKEND_HOST}
     ports:
       - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
     depends_on:
       - backend
 
 volumes:
   db_data:
+  uploads_data:
+    name: rtls_uploads_data
+    external: true
+  caddy_data:
+  caddy_config:

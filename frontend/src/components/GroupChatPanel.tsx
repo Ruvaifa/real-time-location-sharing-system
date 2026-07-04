@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, Image, MessageSquare, Send, X } from "lucide-react";
 
 import { chatMessageKey, fetchGroupChatHistory, normalizeChatMessage, type ChatMessage } from "../lib/chat";
+import { apiUrl } from "../lib/api";
 import { sendWsMessage, useAppStore } from "../store/useAppStore";
 
 type GroupChatPanelProps = {
@@ -203,7 +204,7 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
     formData.append("image", file);
 
     try {
-      const response = await fetch(`/api/groups/${encodeURIComponent(groupId)}/chat/upload`, {
+      const response = await fetch(apiUrl(`/api/groups/${encodeURIComponent(groupId)}/chat/upload`), {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
@@ -215,7 +216,7 @@ export function GroupChatPanel({ isOpen, onToggle }: GroupChatPanelProps) {
       }
 
       const data = await response.json();
-      const mediaURL = data.url;
+      const mediaURL = apiUrl(data.url);
 
       const caption = draft.trim();
       const clientMessageId = `client-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

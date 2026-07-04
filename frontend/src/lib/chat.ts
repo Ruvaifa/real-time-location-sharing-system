@@ -1,3 +1,5 @@
+import { apiUrl } from "./api";
+
 export type ChatMessageKind = "text" | "system" | "image";
 export type ChatMessageStatus = "sending" | "sent" | "failed";
 
@@ -59,7 +61,7 @@ export function normalizeChatMessage(input: unknown): ChatMessage | null {
     userID: stringValue(data.userID || data.userId || data.user_id),
     username: stringValue(data.username || data.user_name || data.name || data.userID || data.userId || data.user_id),
     text,
-    mediaURL: mediaURL || undefined,
+    mediaURL: mediaURL ? apiUrl(mediaURL) : undefined,
     timestamp: numberValue(data.timestamp || data.timestamp_ms),
     kind,
     status:
@@ -73,7 +75,7 @@ export function normalizeChatMessage(input: unknown): ChatMessage | null {
 export async function fetchGroupChatHistory(groupID: string, token: string, recipientID?: string): Promise<ChatMessage[]> {
   if (!groupID) return [];
 
-  let url = `/api/groups/${encodeURIComponent(groupID)}/messages`;
+  let url = apiUrl(`/api/groups/${encodeURIComponent(groupID)}/messages`);
   if (recipientID) {
     url += `?recipientID=${encodeURIComponent(recipientID)}`;
   }

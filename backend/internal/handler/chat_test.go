@@ -21,14 +21,20 @@ type fakeChatStore struct {
 	before   int64
 }
 
-func (f *fakeChatStore) UpsertUser(context.Context, string, string) error            { return nil }
-func (f *fakeChatStore) GetUser(context.Context, string) (string, string, error)     { return "", "", nil }
+func (f *fakeChatStore) UpsertUser(context.Context, string, string) error        { return nil }
+func (f *fakeChatStore) GetUser(context.Context, string) (string, string, error) { return "", "", nil }
 func (f *fakeChatStore) GetUserByEmail(context.Context, string) (string, string, string, error) {
 	return "", "", "", nil
 }
 func (f *fakeChatStore) CreateUser(context.Context, string, string, string, string) error { return nil }
 func (f *fakeChatStore) CreateRoom(context.Context, string, string, string) error         { return nil }
 func (f *fakeChatStore) GetRoomPasswordHash(context.Context, string) (string, error)      { return "", nil }
+func (f *fakeChatStore) GetOrCreateRoomInvite(context.Context, string, string) (string, error) {
+	return "", nil
+}
+func (f *fakeChatStore) GetRoomByInviteToken(context.Context, string) (string, error) {
+	return "", nil
+}
 func (f *fakeChatStore) InsertLocation(context.Context, model.LocationMessage) error { return nil }
 func (f *fakeChatStore) PruneLocations(context.Context, int) (int64, error)          { return 0, nil }
 func (f *fakeChatStore) CreateTrip(context.Context, *model.Trip) error               { return nil }

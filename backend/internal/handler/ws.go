@@ -108,6 +108,8 @@ func (h *Handler) Routes() chi.Router {
 		r.Get("/api/route", h.routeH.GetRoute)
 		r.Post("/api/rooms", h.CreateRoom)
 		r.Post("/api/rooms/join", h.JoinRoom)
+		r.Post("/api/rooms/{roomID}/invite", h.CreateRoomInvite)
+		r.Post("/api/rooms/join-invite", h.JoinRoomInvite)
 		r.Get("/api/trip/{groupID}", h.GetActiveTrip)
 		r.Get("/api/groups/{groupID}/messages", h.GetGroupMessages)
 		r.Post("/api/groups/{groupID}/chat/upload", h.UploadImage)
