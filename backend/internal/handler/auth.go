@@ -254,12 +254,10 @@ func (h *Handler) JoinRoom(w http.ResponseWriter, r *http.Request) {
 		apierr.Render(w, http.StatusInternalServerError, "JOIN_ROOM_FAILED", "Could not join room")
 		return
 	}
-
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
-<<<<<<< HEAD
 type forgotPasswordRequest struct {
 	Email string `json:"email"`
 }
@@ -324,7 +322,53 @@ type resetPasswordRequest struct {
 // ResetPassword validates the reset token and updates the user's password.
 func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	var req resetPasswordRequest
-=======
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierr.Render(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
+		return
+	}
+
+	req.Token = strings.TrimSpace(req.Token)
+	req.Password = strings.TrimSpace(req.Password)
+	if req.Token == "" || req.Password == "" {
+		apierr.Render(w, http.StatusBadRequest, "INVALID_INPUT", "Token and new password are required")
+		return
+	}
+
+	if len(req.Password) < 6 {
+		apierr.Render(w, http.StatusBadRequest, "INVALID_PASSWORD", "Password must be at least 6 characters")
+		return
+	}
+
+	email, expiresAt, err := h.hub.Store.GetUserByResetToken(r.Context(), req.Token)
+	if err != nil {
+		apierr.Render(w, http.StatusBadRequest, "INVALID_TOKEN", "Invalid or expired token")
+		return
+	}
+
+	if time.Now().After(expiresAt) {
+		apierr.Render(w, http.StatusBadRequest, "EXPIRED_TOKEN", "Reset token has expired")
+		return
+	}
+
+	// Hash new password using bcrypt
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		slog.Error("Failed to hash new password", "error", err)
+		apierr.Render(w, http.StatusInternalServerError, "SERVER_ERROR", "Internal server error")
+		return
+	}
+
+	// Update user's password and clear the reset token
+	if err := h.hub.Store.UpdateUserPasswordAndClearToken(r.Context(), email, string(hash)); err != nil {
+		slog.Error("Failed to update user password", "email", email, "error", err)
+		apierr.Render(w, http.StatusInternalServerError, "SERVER_ERROR", "Internal server error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "Password has been reset successfully."})
+}
+
 // CreateRoomInvite returns a reusable invite token for a room member.
 func (h *Handler) CreateRoomInvite(w http.ResponseWriter, r *http.Request) {
 	userID, ok := appmw.GetUserID(r.Context())
@@ -377,49 +421,12 @@ func (h *Handler) JoinRoomInvite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req roomInviteRequest
->>>>>>> 29829dbaaaa9f6953b9a9804913d50e30c19a2dc
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierr.Render(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
 		return
 	}
 
 	req.Token = strings.TrimSpace(req.Token)
-<<<<<<< HEAD
-	req.Password = strings.TrimSpace(req.Password)
-	if req.Token == "" || req.Password == "" {
-		apierr.Render(w, http.StatusBadRequest, "INVALID_INPUT", "Token and new password are required")
-		return
-	}
-
-	if len(req.Password) < 6 {
-		apierr.Render(w, http.StatusBadRequest, "INVALID_PASSWORD", "Password must be at least 6 characters")
-		return
-	}
-
-	email, expiresAt, err := h.hub.Store.GetUserByResetToken(r.Context(), req.Token)
-	if err != nil {
-		apierr.Render(w, http.StatusBadRequest, "INVALID_TOKEN", "Invalid or expired token")
-		return
-	}
-
-	if time.Now().After(expiresAt) {
-		apierr.Render(w, http.StatusBadRequest, "EXPIRED_TOKEN", "Reset token has expired")
-		return
-	}
-
-	// Hash new password using bcrypt
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-	if err != nil {
-		slog.Error("Failed to hash new password", "error", err)
-		apierr.Render(w, http.StatusInternalServerError, "SERVER_ERROR", "Internal server error")
-		return
-	}
-
-	// Update user's password and clear the reset token
-	if err := h.hub.Store.UpdateUserPasswordAndClearToken(r.Context(), email, string(hash)); err != nil {
-		slog.Error("Failed to update user password", "email", email, "error", err)
-		apierr.Render(w, http.StatusInternalServerError, "SERVER_ERROR", "Internal server error")
-=======
 	if req.Token == "" {
 		apierr.Render(w, http.StatusBadRequest, "INVALID_INPUT", "Invite token is required")
 		return
@@ -439,14 +446,9 @@ func (h *Handler) JoinRoomInvite(w http.ResponseWriter, r *http.Request) {
 	if err := h.hub.Store.UpsertRoomMember(r.Context(), roomID, userID, name); err != nil {
 		slog.Error("Failed to join room via invite", "room", roomID, "user", userID, "error", err)
 		apierr.Render(w, http.StatusInternalServerError, "JOIN_ROOM_FAILED", "Could not join room")
->>>>>>> 29829dbaaaa9f6953b9a9804913d50e30c19a2dc
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-<<<<<<< HEAD
-	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "Password has been reset successfully."})
-=======
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "roomId": roomID})
->>>>>>> 29829dbaaaa9f6953b9a9804913d50e30c19a2dc
 }
