@@ -12,13 +12,14 @@ export function DestinationSearch() {
   const location = useAppStore((s) => s.location);
   const setTrip = useAppStore((s) => s.setTrip);
   const trip = useAppStore((s) => s.trip);
+  const userID = useAppStore((s) => s.userID);
   const username = useAppStore((s) => s.username);
   const requestFitBounds = useAppStore((s) => s.requestFitBounds);
   const routePreview = useAppStore((s) => s.routePreview);
   const setRoutePreview = useAppStore((s) => s.setRoutePreview);
   const inputRef = useRef<HTMLInputElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -98,7 +99,7 @@ export function DestinationSearch() {
     const tripId = `trip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const tripData = {
       id: tripId,
-      creatorID: username,
+      creatorID: userID,
       creatorName: username,
       origin: routePreview.origin,
       originName: "My location",
@@ -108,7 +109,7 @@ export function DestinationSearch() {
       distanceMeters: routePreview.distance,
       durationSeconds: routePreview.duration,
       status: "active" as const,
-      participants: [username],
+      participants: [userID],
       startedAt: Date.now(),
     };
 

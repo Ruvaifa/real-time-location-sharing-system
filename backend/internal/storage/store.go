@@ -18,6 +18,8 @@ type Store interface {
 	UpdateUserPasswordAndClearToken(ctx context.Context, email, passwordHash string) error
 	CreateRoom(ctx context.Context, id, passwordHash, creatorID string) error
 	GetRoomPasswordHash(ctx context.Context, id string) (string, error)
+	GetOrCreateRoomInvite(ctx context.Context, roomID, token string) (string, error)
+	GetRoomByInviteToken(ctx context.Context, token string) (string, error)
 	InsertLocation(ctx context.Context, loc model.LocationMessage) error
 	PruneLocations(ctx context.Context, retentionDays int) (int64, error)
 

@@ -524,11 +524,21 @@ func (h *Hub) handleChatMessage(sender *Client, payload json.RawMessage) {
 		return
 	}
 
+	displayName := sender.UserID
+	if h.Store != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		name, _, err := h.Store.GetUser(ctx, sender.UserID)
+		cancel()
+		if err == nil && name != "" {
+			displayName = name
+		}
+	}
+
 	// Trust the socket identity, not client-supplied sender metadata.
 	msg.MessageID = generateID()
 	msg.GroupID = sender.GroupID
 	msg.UserID = sender.UserID
-	msg.Username = sender.UserID
+	msg.Username = displayName
 	msg.Timestamp = time.Now().UnixMilli()
 
 	if err := validate.ChatMessage(&msg); err != nil {
@@ -544,7 +554,7 @@ func (h *Hub) handleChatMessage(sender *Client, payload json.RawMessage) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	if err := h.Store.UpsertRoomMember(ctx, sender.GroupID, sender.UserID, sender.UserID); err != nil {
+	if err := h.Store.UpsertRoomMember(ctx, sender.GroupID, sender.UserID, displayName); err != nil {
 		slog.Error("Failed to refresh room membership before chat persist", "user", sender.UserID, "group", sender.GroupID, "error", err)
 		return
 	}

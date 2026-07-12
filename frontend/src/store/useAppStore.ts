@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
 import type { ChatMessage } from "../lib/chat";
 
 export type Screen = "login" | "picker" | "map";
@@ -23,19 +24,6 @@ export interface AlertData {
   userID: string;
   name: string;
   timestamp: number;
-}
-
-export interface Route {
-  id: string;
-  name: string;
-  distanceKm: number;
-  waypoints: [number, number][];
-}
-
-interface SimState {
-  active: boolean;
-  route: Route | null;
-  progress: number;
 }
 
 export interface TripData {
@@ -69,6 +57,8 @@ export interface RoutePreviewData {
   isSos?: boolean;
 }
 
+const sessionStorageName = "rtls-session";
+
 interface AppStore {
   screen: Screen;
   email: string;
@@ -79,7 +69,6 @@ interface AppStore {
   peers: Record<string, LocationData>;
   token: string;
   user: UserProfile | null;
-  sim: SimState;
   trip: TripData | null;
   ws: WebSocket | null;
   fitBounds: FitBounds | null;
@@ -98,9 +87,6 @@ interface AppStore {
   clearLiveData: () => void;
   resetSession: () => void;
   removePeer: (userID: string) => void;
-  startSim: (route: Route) => void;
-  stopSim: () => void;
-  setSimProgress: (progress: number) => void;
   setTrip: (trip: TripData | null) => void;
   updateTripParticipants: (participants: string[]) => void;
   setTripStatus: (status: TripData["status"]) => void;
@@ -123,47 +109,9 @@ function chatMessageKey(message: ChatMessage): string {
   );
 }
 
-export const useAppStore = create<AppStore>((set) => ({
-  screen: "login",
-  email: "",
-  username: "",
-  userID: "",
-  groupId: "",
-  location: null,
-  peers: {},
-  token: "",
-  user: null,
-  sim: { active: false, route: null, progress: 0 },
-  trip: null,
-  ws: null,
-  fitBounds: null,
-  routePreview: null,
-  chatMessages: [],
-  alerts: {},
-  setScreen: (screen) => set({ screen }),
-  setEmail: (email) => set({ email }),
-  setUsername: (username) => set({ username }),
-  setUserID: (userID) => set({ userID }),
-  setGroupId: (groupId) => set({ groupId }),
-  setToken: (token) => set({ token }),
-  setUser: (user) => set({ user }),
-  setLocation: (location) => set({ location }),
-  upsertPeer: (peer) =>
-    set((state) => ({
-      peers: {
-        ...state.peers,
-        [peer.userID]: peer,
-      },
-    })),
-  removePeer: (userID) =>
-    set((state) => {
-      const next = { ...state.peers };
-      delete next[userID];
-      return { peers: next };
-    }),
-  clearLiveData: () => set({ location: null, peers: {}, trip: null, routePreview: null, chatMessages: [], alerts: {} }),
-  resetSession: () =>
-    set({
+export const useAppStore = create<AppStore>()(
+  persist(
+    (set) => ({
       screen: "login",
       email: "",
       username: "",
@@ -173,71 +121,118 @@ export const useAppStore = create<AppStore>((set) => ({
       peers: {},
       token: "",
       user: null,
-      sim: { active: false, route: null, progress: 0 },
       trip: null,
+      ws: null,
+      fitBounds: null,
       routePreview: null,
       chatMessages: [],
       alerts: {},
-    }),
-  startSim: (route) =>
-    set({ sim: { active: true, route, progress: 0 } }),
-  stopSim: () =>
-    set({ sim: { active: false, route: null, progress: 0 } }),
-  setSimProgress: (progress) =>
-    set((state) => ({ sim: { ...state.sim, progress } })),
-  setTrip: (trip) => set({ trip }),
-  updateTripParticipants: (participants) =>
-    set((state) => {
-      if (!state.trip) return {};
-      return { trip: { ...state.trip, participants } };
-    }),
-  setTripStatus: (status) =>
-    set((state) => {
-      if (!state.trip) return {};
-      return { trip: { ...state.trip, status } };
-    }),
-  setWs: (ws) => set({ ws }),
-  setRoutePreview: (routePreview) => set({ routePreview }),
-  setChatMessages: (messages) =>
-    set((state) => {
-      const incomingKeys = new Set(messages.map(chatMessageKey));
-      const pendingOrNew = state.chatMessages.filter(
-        (msg) => msg.status === "sending" || !incomingKeys.has(chatMessageKey(msg))
-      );
-      const combined = [...messages, ...pendingOrNew].sort((a, b) => a.timestamp - b.timestamp);
-      return { chatMessages: combined };
-    }),
-  appendChatMessage: (message) =>
-    set((state) => {
-      const key = chatMessageKey(message);
-      const existingIndex = state.chatMessages.findIndex((item) => chatMessageKey(item) === key);
+      setScreen: (screen) => set({ screen }),
+      setEmail: (email) => set({ email }),
+      setUsername: (username) => set({ username }),
+      setUserID: (userID) => set({ userID }),
+      setGroupId: (groupId) => set({ groupId }),
+      setToken: (token) => set({ token }),
+      setUser: (user) => set({ user }),
+      setLocation: (location) => set({ location }),
+      upsertPeer: (peer) =>
+        set((state) => ({
+          peers: {
+            ...state.peers,
+            [peer.userID]: peer,
+          },
+        })),
+      removePeer: (userID) =>
+        set((state) => {
+          const next = { ...state.peers };
+          delete next[userID];
+          return { peers: next };
+        }),
+      clearLiveData: () => set({ location: null, peers: {}, trip: null, routePreview: null, chatMessages: [], alerts: {} }),
+      resetSession: () =>
+        set({
+          screen: "login",
+          email: "",
+          username: "",
+          userID: "",
+          groupId: "",
+          location: null,
+          peers: {},
+          token: "",
+          user: null,
+          trip: null,
+          routePreview: null,
+          chatMessages: [],
+          alerts: {},
+        }),
+      setTrip: (trip) => set({ trip }),
+      updateTripParticipants: (participants) =>
+        set((state) => {
+          if (!state.trip) return {};
+          return { trip: { ...state.trip, participants } };
+        }),
+      setTripStatus: (status) =>
+        set((state) => {
+          if (!state.trip) return {};
+          return { trip: { ...state.trip, status } };
+        }),
+      setWs: (ws) => set({ ws }),
+      setRoutePreview: (routePreview) => set({ routePreview }),
+      setChatMessages: (messages) =>
+        set((state) => {
+          const incomingKeys = new Set(messages.map(chatMessageKey));
+          const pendingOrNew = state.chatMessages.filter(
+            (msg) => msg.status === "sending" || !incomingKeys.has(chatMessageKey(msg))
+          );
+          const combined = [...messages, ...pendingOrNew].sort((a, b) => a.timestamp - b.timestamp);
+          return { chatMessages: combined };
+        }),
+      appendChatMessage: (message) =>
+        set((state) => {
+          const key = chatMessageKey(message);
+          const existingIndex = state.chatMessages.findIndex((item) => chatMessageKey(item) === key);
 
-      if (existingIndex === -1) {
-        return { chatMessages: [...state.chatMessages, message] };
-      }
+          if (existingIndex === -1) {
+            return { chatMessages: [...state.chatMessages, message] };
+          }
 
-      const next = [...state.chatMessages];
-      next[existingIndex] = { ...next[existingIndex], ...message };
-      return { chatMessages: next };
+          const next = [...state.chatMessages];
+          next[existingIndex] = { ...next[existingIndex], ...message };
+          return { chatMessages: next };
+        }),
+      clearChatMessages: () => set({ chatMessages: [] }),
+      requestFitBounds: (points) =>
+        set((state) => ({
+          fitBounds: { points, key: (state.fitBounds?.key || 0) + 1 },
+        })),
+      clearFitBounds: () => set({ fitBounds: null }),
+      setAlert: (userID, name, alerting, timestamp) =>
+        set((state) => {
+          const next = { ...state.alerts };
+          if (alerting) {
+            next[userID] = { userID, name, timestamp };
+          } else {
+            delete next[userID];
+          }
+          return { alerts: next };
+        }),
+      clearAlerts: () => set({ alerts: {} }),
     }),
-  clearChatMessages: () => set({ chatMessages: [] }),
-  requestFitBounds: (points) =>
-    set((state) => ({
-      fitBounds: { points, key: (state.fitBounds?.key || 0) + 1 },
-    })),
-  clearFitBounds: () => set({ fitBounds: null }),
-  setAlert: (userID, name, alerting, timestamp) =>
-    set((state) => {
-      const next = { ...state.alerts };
-      if (alerting) {
-        next[userID] = { userID, name, timestamp };
-      } else {
-        delete next[userID];
-      }
-      return { alerts: next };
-    }),
-  clearAlerts: () => set({ alerts: {} }),
-}));
+    {
+      name: sessionStorageName,
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        screen: state.screen,
+        email: state.email,
+        username: state.username,
+        userID: state.userID,
+        groupId: state.groupId,
+        token: state.token,
+        user: state.user,
+      }),
+    }
+  )
+);
 
 // Standalone — reads ws from store at call time, avoids set() side-effects
 export function sendWsMessage(type: string, payload: Record<string, unknown> = {}) {

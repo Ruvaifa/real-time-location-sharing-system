@@ -4,6 +4,9 @@
 .env.*.local
 *.pem
 *.key
+DEPLOYED_BACKEND_HOST.txt
+DEPLOYED_IP.txt
+INSTANCE_ID.txt
 
 # --- Dependencies ---
 node_modules/
