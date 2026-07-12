@@ -13,6 +13,9 @@ type Store interface {
 	GetUser(ctx context.Context, userID string) (name string, email string, err error)
 	GetUserByEmail(ctx context.Context, email string) (userID string, name string, passwordHash string, err error)
 	CreateUser(ctx context.Context, userID, name, email, passwordHash string) error
+	SaveResetToken(ctx context.Context, email, token string, expiresAt time.Time) error
+	GetUserByResetToken(ctx context.Context, token string) (email string, expiresAt time.Time, err error)
+	UpdateUserPasswordAndClearToken(ctx context.Context, email, passwordHash string) error
 	CreateRoom(ctx context.Context, id, passwordHash, creatorID string) error
 	GetRoomPasswordHash(ctx context.Context, id string) (string, error)
 	InsertLocation(ctx context.Context, loc model.LocationMessage) error

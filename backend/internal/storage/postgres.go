@@ -100,6 +100,38 @@ func (s *PostgresStore) CreateUser(ctx context.Context, userID, name, email, pas
 	return err
 }
 
+// SaveResetToken saves a temporary password reset token for a user.
+func (s *PostgresStore) SaveResetToken(ctx context.Context, email, token string, expiresAt time.Time) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE users 
+		SET reset_token = $1, reset_token_expires_at = $2 
+		WHERE email = $3
+	`, token, expiresAt, email)
+	return err
+}
+
+// GetUserByResetToken retrieves the user's email and reset token expiration time using the reset token.
+func (s *PostgresStore) GetUserByResetToken(ctx context.Context, token string) (string, time.Time, error) {
+	var email string
+	var expiresAt time.Time
+	err := s.db.QueryRowContext(ctx, `
+		SELECT email, reset_token_expires_at 
+		FROM users 
+		WHERE reset_token = $1
+	`, token).Scan(&email, &expiresAt)
+	return email, expiresAt, err
+}
+
+// UpdateUserPasswordAndClearToken updates the password hash and invalidates the reset token.
+func (s *PostgresStore) UpdateUserPasswordAndClearToken(ctx context.Context, email, passwordHash string) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE users 
+		SET password_hash = $1, reset_token = NULL, reset_token_expires_at = NULL 
+		WHERE email = $2
+	`, passwordHash, email)
+	return err
+}
+
 // CreateRoom inserts a new room record.
 func (s *PostgresStore) CreateRoom(ctx context.Context, id, passwordHash, creatorID string) error {
 	_, err := s.db.ExecContext(ctx, `

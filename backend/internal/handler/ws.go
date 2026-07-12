@@ -16,6 +16,7 @@ import (
 	"location-sharing-backend/internal/config"
 	appmw "location-sharing-backend/internal/middleware"
 	"location-sharing-backend/internal/services/geocoding"
+	"location-sharing-backend/internal/services/mailer"
 	"location-sharing-backend/internal/services/routing"
 	ws "location-sharing-backend/internal/websocket"
 	"location-sharing-backend/pkg/apierr"
@@ -31,6 +32,7 @@ type Handler struct {
 	geoH           *geocoding.Handler
 	generalLimiter *appmw.IPRateLimiter
 	loginLimiter   *appmw.IPRateLimiter
+	mailer         *mailer.GmailMailer
 }
 
 // NewHandler creates a Handler with a configured WebSocket upgrader.
@@ -51,6 +53,7 @@ func NewHandler(hub *ws.Hub, cfg *config.Config, router routing.Router, geocoder
 		tm:     auth.NewTokenManager(cfg.JWTSecret),
 		routeH: routing.NewHandler(router),
 		geoH:   geocoding.NewHandler(geocoder),
+		mailer: mailer.NewGmailMailer(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.GoogleRefreshToken, cfg.GoogleSenderEmail),
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
@@ -98,6 +101,8 @@ func (h *Handler) Routes() chi.Router {
 	// Public routes
 	r.With(appmw.RateLimit(h.loginLimiter)).Post("/api/auth/signup", h.Signup)
 	r.With(appmw.RateLimit(h.loginLimiter)).Post("/api/auth/login", h.Login)
+	r.With(appmw.RateLimit(h.loginLimiter)).Post("/api/auth/forgot-password", h.ForgotPassword)
+	r.With(appmw.RateLimit(h.loginLimiter)).Post("/api/auth/reset-password", h.ResetPassword)
 	r.Get("/health", h.Health)
 	r.Get("/ready", h.Ready)
 

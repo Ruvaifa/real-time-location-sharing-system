@@ -31,6 +31,11 @@ type Config struct {
 
 	UploadDir     string
 	MaxUploadSize int // in bytes
+
+	GoogleClientID     string
+	GoogleClientSecret string
+	GoogleRefreshToken string
+	GoogleSenderEmail  string
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -59,6 +64,11 @@ func Load() *Config {
 
 		UploadDir:     envOrDefault("UPLOAD_DIR", "./uploads"),
 		MaxUploadSize: envOrDefaultInt("MAX_UPLOAD_SIZE", 5242880), // 5MB default
+
+		GoogleClientID:     envOrDefault("GOOGLE_CLIENT_ID", ""),
+		GoogleClientSecret: envOrDefault("GOOGLE_CLIENT_SECRET", ""),
+		GoogleRefreshToken: envOrDefault("GOOGLE_REFRESH_TOKEN", ""),
+		GoogleSenderEmail:  envOrDefault("GOOGLE_SENDER_EMAIL", ""),
 	}
 
 	// Clean origins

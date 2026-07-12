@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	appmw "location-sharing-backend/internal/middleware"
 	"location-sharing-backend/pkg/apierr"
@@ -242,4 +243,115 @@ func (h *Handler) JoinRoom(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+type forgotPasswordRequest struct {
+	Email string `json:"email"`
+}
+
+// ForgotPassword handles sending a password reset email via Google Gmail API.
+func (h *Handler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
+	var req forgotPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierr.Render(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
+		return
+	}
+
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+	if req.Email == "" {
+		apierr.Render(w, http.StatusBadRequest, "INVALID_INPUT", "Email is required")
+		return
+	}
+
+	// Check if user exists
+	_, _, _, err := h.hub.Store.GetUserByEmail(r.Context(), req.Email)
+	if err != nil {
+		// ponytail: return success even if user not found to prevent email enumeration/harvesting.
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "If the email is registered, a reset code has been sent."})
+		return
+	}
+
+	// Generate a secure 6-character hex token (3 bytes)
+	tokenBytes := make([]byte, 3)
+	_, _ = rand.Read(tokenBytes)
+	token := hex.EncodeToString(tokenBytes)
+
+	// Token expires in 1 hour
+	expiresAt := time.Now().Add(1 * time.Hour)
+
+	if err := h.hub.Store.SaveResetToken(r.Context(), req.Email, token, expiresAt); err != nil {
+		slog.Error("Failed to save reset token", "email", req.Email, "error", err)
+		apierr.Render(w, http.StatusInternalServerError, "SERVER_ERROR", "Internal server error")
+		return
+	}
+
+	// Send the reset email using the Google Gmail API mailer
+	if h.mailer != nil {
+		if err := h.mailer.SendResetEmail(req.Email, token); err != nil {
+			slog.Error("Failed to send reset email", "email", req.Email, "error", err)
+			apierr.Render(w, http.StatusInternalServerError, "SERVER_ERROR", "Could not send reset email")
+			return
+		}
+	} else {
+		slog.Info("Mailer not configured, skipping reset email delivery (OK for tests)", "email", req.Email, "token", token)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": "If the email is registered, a reset code has been sent."})
+}
+
+type resetPasswordRequest struct {
+	Token    string `json:"token"`
+	Password string `json:"password"`
+}
+
+// ResetPassword validates the reset token and updates the user's password.
+func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	var req resetPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierr.Render(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
+		return
+	}
+
+	req.Token = strings.TrimSpace(req.Token)
+	req.Password = strings.TrimSpace(req.Password)
+	if req.Token == "" || req.Password == "" {
+		apierr.Render(w, http.StatusBadRequest, "INVALID_INPUT", "Token and new password are required")
+		return
+	}
+
+	if len(req.Password) < 6 {
+		apierr.Render(w, http.StatusBadRequest, "INVALID_PASSWORD", "Password must be at least 6 characters")
+		return
+	}
+
+	email, expiresAt, err := h.hub.Store.GetUserByResetToken(r.Context(), req.Token)
+	if err != nil {
+		apierr.Render(w, http.StatusBadRequest, "INVALID_TOKEN", "Invalid or expired token")
+		return
+	}
+
+	if time.Now().After(expiresAt) {
+		apierr.Render(w, http.StatusBadRequest, "EXPIRED_TOKEN", "Reset token has expired")
+		return
+	}
+
+	// Hash new password using bcrypt
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		slog.Error("Failed to hash new password", "error", err)
+		apierr.Render(w, http.StatusInternalServerError, "SERVER_ERROR", "Internal server error")
+		return
+	}
+
+	// Update user's password and clear the reset token
+	if err := h.hub.Store.UpdateUserPasswordAndClearToken(r.Context(), email, string(hash)); err != nil {
+		slog.Error("Failed to update user password", "email", email, "error", err)
+		apierr.Render(w, http.StatusInternalServerError, "SERVER_ERROR", "Internal server error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "Password has been reset successfully."})
 }

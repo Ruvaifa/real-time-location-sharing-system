@@ -12,6 +12,7 @@ import (
 	appmw "location-sharing-backend/internal/middleware"
 	"location-sharing-backend/internal/model"
 	"location-sharing-backend/internal/websocket"
+	"time"
 )
 
 type fakeChatStore struct {
@@ -27,6 +28,11 @@ func (f *fakeChatStore) GetUserByEmail(context.Context, string) (string, string,
 	return "", "", "", nil
 }
 func (f *fakeChatStore) CreateUser(context.Context, string, string, string, string) error { return nil }
+func (f *fakeChatStore) SaveResetToken(context.Context, string, string, time.Time) error   { return nil }
+func (f *fakeChatStore) GetUserByResetToken(context.Context, string) (string, time.Time, error) {
+	return "", time.Time{}, nil
+}
+func (f *fakeChatStore) UpdateUserPasswordAndClearToken(context.Context, string, string) error { return nil }
 func (f *fakeChatStore) CreateRoom(context.Context, string, string, string) error         { return nil }
 func (f *fakeChatStore) GetRoomPasswordHash(context.Context, string) (string, error)      { return "", nil }
 func (f *fakeChatStore) InsertLocation(context.Context, model.LocationMessage) error { return nil }

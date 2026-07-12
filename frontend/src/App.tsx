@@ -353,27 +353,90 @@ function LoginScreen() {
   const setUsername = useAppStore((state) => state.setUsername);
   const setUserID = useAppStore((state) => state.setUserID);
 
-  const [isSignUp, setIsSignUp] = useState(false);
+  type AuthMode = "login" | "signup" | "forgot" | "reset";
+  const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [resetToken, setResetToken] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
+    const host = import.meta.env.VITE_WS_HOST || window.location.host;
+    const protocol = window.location.protocol === "https:" ? "https:" : "http:";
+
+    if (mode === "forgot") {
+      if (!email.trim()) {
+        setError("Please enter your email address.");
+        return;
+      }
+      setLoading(true);
+      try {
+        const response = await fetch(`${protocol}//${host}/api/auth/forgot-password`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error?.message || data.message || "Failed to request password reset.");
+        }
+        setMode("reset");
+        setError(null);
+        alert(data.message || "Reset code sent! Please check your email inbox.");
+      } catch (err: any) {
+        setError(err.message || "Error connecting to server.");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    if (mode === "reset") {
+      if (!resetToken.trim() || !password.trim()) {
+        setError("Please fill in both the token and the new password.");
+        return;
+      }
+      if (password.length < 6) {
+        setError("Password must be at least 6 characters.");
+        return;
+      }
+      setLoading(true);
+      try {
+        const response = await fetch(`${protocol}//${host}/api/auth/reset-password`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: resetToken, password }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error?.message || data.message || "Failed to reset password.");
+        }
+        setMode("login");
+        setResetToken("");
+        setPassword("");
+        setError(null);
+        alert("Password reset successfully! You can now log in with your new password.");
+      } catch (err: any) {
+        setError(err.message || "Error connecting to server.");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    const isSignUp = mode === "signup";
     if (!email.trim() || !password.trim() || (isSignUp && !name.trim())) {
       setError("Please fill in all fields.");
       return;
     }
-    setError(null);
     setLoading(true);
 
     try {
-      const host = import.meta.env.VITE_WS_HOST || window.location.host;
-      const protocol = window.location.protocol === "https:" ? "https:" : "http:";
       const endpoint = isSignUp ? "/api/auth/signup" : "/api/auth/login";
-      
       const body = isSignUp 
         ? { email, password, name }
         : { email, password };
@@ -402,7 +465,16 @@ function LoginScreen() {
     }
   };
 
-  const isFormValid = email.trim() && password.trim() && (!isSignUp || name.trim());
+  let isFormValid = false;
+  if (mode === "login") {
+    isFormValid = !!(email.trim() && password.trim());
+  } else if (mode === "signup") {
+    isFormValid = !!(email.trim() && password.trim() && name.trim());
+  } else if (mode === "forgot") {
+    isFormValid = !!email.trim();
+  } else if (mode === "reset") {
+    isFormValid = !!(resetToken.trim() && password.trim());
+  }
 
   return (
     <motion.div
@@ -421,10 +493,15 @@ function LoginScreen() {
         </div>
 
         <h1 className="login-title">ParkQ Live</h1>
-        <p className="login-subtitle">Move together, track together.</p>
+        <p className="login-subtitle">
+          {mode === "login" && "Move together, track together."}
+          {mode === "signup" && "Create an account to get started."}
+          {mode === "forgot" && "Reset your password."}
+          {mode === "reset" && "Enter your verification token."}
+        </p>
 
         <form onSubmit={handleSubmit} style={{ width: "100%" }}>
-          {isSignUp && (
+          {mode === "signup" && (
             <div className="input-wrapper">
               <input
                 type="text"
@@ -437,43 +514,104 @@ function LoginScreen() {
             </div>
           )}
 
-          <div className="input-wrapper">
-            <input
-              type="email"
-              placeholder="Email address"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="login-input"
-              required
-            />
-          </div>
+          {mode === "reset" && (
+            <div className="input-wrapper">
+              <input
+                type="text"
+                placeholder="Verification Code (e.g. f3a2b1)"
+                value={resetToken}
+                onChange={(e) => setResetToken(e.target.value)}
+                className="login-input"
+                required
+              />
+            </div>
+          )}
 
-          <div className="input-wrapper">
-            <input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="login-input"
-              required
-            />
-          </div>
+          {mode !== "reset" && (
+            <div className="input-wrapper">
+              <input
+                type="email"
+                placeholder="Email address"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="login-input"
+                required
+              />
+            </div>
+          )}
+
+          {mode !== "forgot" && (
+            <div className="input-wrapper">
+              <input
+                type="password"
+                placeholder={mode === "reset" ? "New Password" : "Password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="login-input"
+                required
+              />
+            </div>
+          )}
+
+          {mode === "login" && (
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: -8, marginBottom: 16 }}>
+              <button
+                type="button"
+                style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", fontSize: 13, padding: 0, textDecoration: "underline", fontWeight: 600 }}
+                onClick={() => {
+                  setMode("forgot");
+                  setError(null);
+                }}
+              >
+                Forgot password?
+              </button>
+            </div>
+          )}
 
           <button className="btn-primary" type="submit" disabled={!isFormValid || loading}>
-            {loading ? "Please wait..." : isSignUp ? "Sign Up" : "Log In"}
+            {loading ? "Please wait..." : 
+              mode === "signup" ? "Sign Up" : 
+              mode === "forgot" ? "Send Reset Code" :
+              mode === "reset" ? "Reset Password" : "Log In"}
           </button>
         </form>
 
         <div style={{ marginTop: 12, textAlign: "center", fontSize: 14 }}>
-          <button
-            style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", textDecoration: "underline", fontWeight: 600 }}
-            onClick={() => {
-              setIsSignUp(!isSignUp);
-              setError(null);
-            }}
-          >
-            {isSignUp ? "Already have an account? Log In" : "Don't have an account? Sign Up"}
-          </button>
+          {mode === "login" && (
+            <button
+              style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", textDecoration: "underline", fontWeight: 600 }}
+              onClick={() => {
+                setMode("signup");
+                setError(null);
+              }}
+            >
+              Don't have an account? Sign Up
+            </button>
+          )}
+
+          {mode === "signup" && (
+            <button
+              style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", textDecoration: "underline", fontWeight: 600 }}
+              onClick={() => {
+                setMode("login");
+                setError(null);
+              }}
+            >
+              Already have an account? Log In
+            </button>
+          )}
+
+          {(mode === "forgot" || mode === "reset") && (
+            <button
+              style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", textDecoration: "underline", fontWeight: 600 }}
+              onClick={() => {
+                setMode("login");
+                setError(null);
+              }}
+            >
+              Back to Log In
+            </button>
+          )}
         </div>
 
         {error && (
